@@ -1,3 +1,10 @@
+
+
+git remote set-url origin git@github.com:danchurch/nanoporeHostDepletionSpruce.git
+
+git push -u origin main
+
+
 ## Chris Nuske has been working really hard to 
 ## get adaptive sampling working for the lab.
 ## let's see if we can catch up with Chris a bit,
@@ -1104,3 +1111,8 @@ cd /lib/systemd/system/
 #sudo cp /lib/systemd/system/guppyd.service /lib/systemd/system/guppyd.service.bk
 
 sudo vim /lib/systemd/system/guppyd.service 
+
+## leaving for a while. Clean up the minknow 114 flowcell sequencing toml for Chris, he may need it
+
+vim /opt/ont/minknow/conf/package/sequencing/sequencing_MIN114_DNA_e8_2_400K.toml
+## commented out line 179 in that file
