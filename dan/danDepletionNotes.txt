@@ -1012,6 +1012,9 @@ wc -l lessThan1000.fastq ## 73180 / 4 = 18295 reads after exclusion of the unblo
 ## on the other hand, aligned again to host might cause a lot of less-than-great alignments
 ## pulling away from our microbial reads artificially
 
+## so another way to gauge the potential amount of microbial information in this data set is to 
+## align to known microbial sequences rather than to eukaryotic host and subtracting
+
 ## and 1000 bp is too harsh of a cutoff. In this dataset, almost all reads are unblocked 
 ## by 600 bp. Probably because we  
 
@@ -1047,3 +1050,57 @@ du -sh ## 650 M
 
 ## generally good news, looks like our setup can handle the large genome, at least in the simulations. 
 
+## the plan:
+
+## run the above pipeline for "full" dataset, then go further by 
+## downloading some kind of prokaryote database from NCBI
+
+## data is here:
+
+cp /var/lib/minknow/data/spruceZoop5/no_sample/20230630_1147_MN40608_spruceZoop5_f5ee253a/fastq_pass/*fastq.gz ./
+
+cd /media/vol1/daniel/hostDepletion/ourData/bigGenome_depletion_data/bigDataRedo
+
+gunzip *fastq.gz
+
+cat *.fastq > comboSpruceZoop5.fastq 
+
+## let's go down to 500bp, the read distribution indicates this is a pretty 
+## good cutoff for the readfish rejection threshold
+
+seqtk seq -L 500 comboSpruceZoop5.fastq > comboSpruceZoop5_onlyBigReads.fastq
+
+grep -c "^@" comboSpruceZoop5.fastq  ## 108,743 reads
+grep -c "^@" comboSpruceZoop5_onlyBigReads.fastq  ## 68,902 reads
+
+## fastqc
+
+conda activate 
+
+mkdir qcBig/
+fastqc -t 8 -o qcBig --extract comboSpruceZoop5_onlyBigReads.fastq
+
+mkdir qcSmall/
+
+fastqc -t 8 -o qcSmall --extract comboSpruceZoop5.fastq
+
+#file=/media/vol1/daniel/hostDepletion/ourData/bigGenome_depletion_data/bigDataRedo/qcSmall/
+
+file=/media/vol1/daniel/hostDepletion/ourData/bigGenome_depletion_data/bigDataRedo/qcBig/
+
+dest=/home/daniel/Documents/projects/fichtelgebirge_project/spruceGenome/dataFromHostDep/qc/
+
+scp -r -i ~/.ssh/id_ed25519 test@132.180.112.115:$file $dest
+
+## run these through same pipeline as above  
+
+genome=/media/vol1/daniel/spruce/Pabies-haploid_withOrganelles.fa
+reads=/media/vol1/daniel/hostDepletion/ourData/bigGenome_depletion_data/bigDataRedo/comboSpruceZoop5_onlyBigReads.fastq
+minimap2 -t 4 -I 100g  -ax map-ont $genome $reads > bigReadsAlign2Spruce.sam  ## too memory hungry, process killed
+
+## can we put guppy on pause for a minute?
+cd /lib/systemd/system/
+
+#sudo cp /lib/systemd/system/guppyd.service /lib/systemd/system/guppyd.service.bk
+
+sudo vim /lib/systemd/system/guppyd.service 
