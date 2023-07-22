@@ -1116,3 +1116,40 @@ sudo vim /lib/systemd/system/guppyd.service
 
 vim /opt/ont/minknow/conf/package/sequencing/sequencing_MIN114_DNA_e8_2_400K.toml
 ## commented out line 179 in that file
+
+##### 22.7.23 #####
+
+## we have a new experiment running, with host depletion running
+
+## let's check on it, and see if it seems like we should keep it
+## running 
+
+## data is here, on lab comp
+
+ls /var/lib/minknow/data/repeatingDansStuff1/21_7_23/20230721_1214_MN40608_FAS81869_d4801a32
+
+cd /var/lib/minknow/data/repeatingDansStuff1/21_7_23/20230721_1214_MN40608_FAS81869_d4801a32
+
+wc -l unblocked_read_ids.txt ## 367603 reads blocked
+
+## manually check a few. still on nanoComp
+
+FAS81869_pass_d4801a32_55579c61_47.fastq.gz
+
+mkdir -p /media/vol1/daniel/spruce/hostDepletion_7.22.23
+
+cp FAS81869_pass_d4801a32_55579c61_47.fastq.gz /media/vol1/daniel/spruce/hostDepletion_7.22.23/
+
+cd /media/vol1/daniel/spruce/hostDepletion_7.22.23/
+
+gunzip FAS81869_pass_d4801a32_55579c61_47.fastq.gz
+
+## get rid of the long reads:
+
+seqtk seq -L 500 FAS81869_pass_d4801a32_55579c61_47.fastq > FAS81869_pass_d4801a32_55579c61_47_onlyBigReads.fastq
+
+grep -c "^@" FAS81869_pass_d4801a32_55579c61_47.fastq ## 4000
+grep -c "^@" FAS81869_pass_d4801a32_55579c61_47_onlyBigReads.fastq ## 2819
+
+
+less FAS81869_pass_d4801a32_55579c61_47_onlyBigReads.fastq 
