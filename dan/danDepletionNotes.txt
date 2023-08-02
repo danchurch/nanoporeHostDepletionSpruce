@@ -45,16 +45,18 @@ sudo usermod -a -G minknow test
 ## and entering the nanoComp computer IP addess:
 132.180.112.115
 
-
-
 ## to test it out, we need a bulk fast5 file
 ## chris already downloaded a sample bulk fast five,
 ## it's here
 
 ls /home/chris/PLSP57501_simulation.fast5
 
+
+## link for me
 ln -s /home/chris/PLSP57501_simulation.fast5 /media/vol1/daniel/hostDepletion/sampleBulk.fast5 
 
+## link for lara
+sudo ln -s /home/chris/PLSP57501_simulation.fast5 /media/vol2/lara/sampleBulk.fast5 
 
 ## we need a TOML file. instructions are here:
 https://github.com/LooseLab/readfish/blob/dev_staging/TOML.md
@@ -100,6 +102,9 @@ cd /opt/ont/minknow/conf/package/sequencing/
 
 cp sequencing_MIN106_DNA.toml sequencing_MIN106_DNA.toml.bk
 chmod 444 sequencing_MIN106_DNA.toml.bk
+
+## to keep track of differences
+diff sequencing_MIN106_DNA.toml.bk sequencing_MIN106_DNA.toml
 
 ## changed the following, under # Sequencing Feature Settings # --> # basic_settings # --> [custom_settings]
 
@@ -149,6 +154,11 @@ wget https://raw.githubusercontent.com/LooseLab/readfish/master/examples/human_c
 ## example...
 
 ln -s /home/chris/hg38.fa /media/vol1/daniel/hostDepletion/hg38.fa
+
+## for lara:
+sudo ln -s /home/chris/hg38.fa /media/vol2/lara/hg38.fa
+ls /home/chris/hg38.fa 
+/media/vol1/daniel/hostDepletion/hg38.fa
 
 ## make an mmi
 minimap2 -d hg38.mmi hg38.fa
@@ -1151,5 +1161,27 @@ seqtk seq -L 500 FAS81869_pass_d4801a32_55579c61_47.fastq > FAS81869_pass_d4801a
 grep -c "^@" FAS81869_pass_d4801a32_55579c61_47.fastq ## 4000
 grep -c "^@" FAS81869_pass_d4801a32_55579c61_47_onlyBigReads.fastq ## 2819
 
-
 less FAS81869_pass_d4801a32_55579c61_47_onlyBigReads.fastq 
+
+## make some backups...
+
+## the good stuff (passed reads) are already compressed, here:
+
+cd /var/lib/minknow/data/repeatingDansStuff1/21_7_23/20230721_1214_MN40608_FAS81869_d4801a32
+
+tar cvf hostDepletion_7.22.23.tar ./fastq_pass
+
+## now put this on home computer and de.nbi computer.
+## would put this on officeDesktop but it's off. 
+
+path2get="/var/lib/minknow/data/repeatingDansStuff1/21_7_23/20230721_1214_MN40608_FAS81869_d4801a32/hostDepletion_7.22.23.tar"
+path2put="/home/daniel/Documents/projects/fichtelgebirge_project/spruceGenome/depletion2big4github/spruceDepletion_7.22.23/"
+scp -i /home/daniel/.ssh/./id_ed25519 test@132.180.112.115:$path2get $path2put
+
+## get it on denbi:
+
+path2get="/home/daniel/Documents/projects/fichtelgebirge_project/spruceGenome/depletion2big4github/spruceDepletion_7.22.23/hostDepletion_7.22.23.tar"
+path2put="/vol/piceaNanopore/dan/"
+scp -P 30419 -i /home/daniel/.ssh/./id_ed25519 $path2get ubuntu@129.70.51.6:$path2put
+
+
