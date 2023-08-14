@@ -902,7 +902,6 @@ reads="/var/lib/minknow/data/spruceZoop4"
 readfish summary $TOML $reads  
 
 
-
 ######## processing, post readfish #########
 
 ## I see several ways forward here. 
@@ -1179,9 +1178,100 @@ path2put="/home/daniel/Documents/projects/fichtelgebirge_project/spruceGenome/de
 scp -i /home/daniel/.ssh/./id_ed25519 test@132.180.112.115:$path2get $path2put
 
 ## get it on denbi:
-
 path2get="/home/daniel/Documents/projects/fichtelgebirge_project/spruceGenome/depletion2big4github/spruceDepletion_7.22.23/hostDepletion_7.22.23.tar"
 path2put="/vol/piceaNanopore/dan/"
 scp -P 30419 -i /home/daniel/.ssh/./id_ed25519 $path2get ubuntu@129.70.51.6:$path2put
+
+## get it on the officeComp that lara is using:
+path2get="/home/daniel/Documents/projects/fichtelgebirge_project/spruceGenome/depletion2big4github/spruceDepletion_7.22.23/hostDepletion_7.22.23.tar"
+path2put="/home/daniel/Documents/backUpSpruceHostDepletion"
+scp -i /home/daniel/.ssh/./id_ed25519 $path2get daniel@132.180.112.24:$path2put
+## that broke...fix later
+
+## ok, backed up. Now, working on de.NBI, we're going to 
+## need to get files between the denbi and lab computers
+
+ssh-keygen -t rsa -f lab2denbi
+
+cd /vol/piceaNanopore/dan
+
+tar xvkf hostDepletion_7.22.23.tar
+
+## we'll do two pipelines. In one, we'll try to "subtract" host reads 
+## with an alignment. In the second, we'll just go straight to assembly, 
+## hoping that the host will come out as just one more MAG. 
+
+## is there an easy way to use the list of the unblocked reads 
+## to decide which reads that were rejected. 
+
+## on the lab nanopore computer, these unblocked (rejected) reads:
+ls /var/lib/minknow/data/repeatingDansStuff1/21_7_23/20230721_1214_MN40608_FAS81869_d4801a32/unblocked_read_ids.txt
+
+## let's put this on the denbi comp, from lab comp:
+path2get=/var/lib/minknow/data/repeatingDansStuff1/21_7_23/20230721_1214_MN40608_FAS81869_d4801a32/unblocked_read_ids.txt
+path2put="/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/"
+scp -P 30419 -i /home/test/.ssh/lab2denbi $path2get ubuntu@129.70.51.6:$path2put
+
+## can we use this somehow to select the reads we need?
+
+## on denbi, maybe use seqkit for this:
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/fastq_pass
+
+gunzip -k *
+
+## actually, do that with pigz 
+pigz -p10 -dk * 
+
+## make one big file:
+
+cat *fastq > allChrisHostDepletionTrial_pass.fastq
+
+wc -l allChrisHostDepletionTrial_pass.fastq ## 6657908, or 1,664,477 reads
+
+conda create -n seqkit -c bioconda seqkit
+
+conda activate seqkit
+
+## try a toy file`
+
+head unblocked_read_ids.txt > unblockIds30.txt
+
+allPassed="/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/fastq_pass/allChrisHostDepletionTrial_pass.fastq"
+
+head -n 1 $allPassed 
+
+echo "22374732-69a0" > id.txt
+
+seqkit grep $allPassed -f id.txt -o testing.fa
+
+seqkit grep $allPassed -p "22374732" -o testing.fa
+
+seqkit grep $allPassed -irp "22374732" 
+
+seqkit grep $allPassed -irnp "22374732" 
+
+seqkit grep $allPassed -rn -f unblockIds30.txt #-o testing.fa
+
+## extend this to the full unblocked read list. 
+## all unblocked reads are rejected 
+
+seqkit grep $allPassed -vrnj 10 -f unblocked_read_ids.txt -o testing.fa
+
+## takes forever. try nohup, up the cores
+
+nohup seqkit grep $allPassed -vrnj 20 -f unblocked_read_ids.txt -o allChrisHostDepletionTrial_noShorts.fastq
+
+grep -c "^@" allChrisHostDepletionTrial_noShorts.fastq
+
+/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData
+
+ssh -p 30419 -i /home/daniel/.ssh/./id_ed25519 ubuntu@129.70.51.6 \
+  "grep -c "^@" /vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fastq"
+
+## there are 1,664,548 reads in the passed reads. 
+## there are 617,842 unblocked reads. 
+## so there should be ~1 million reads after removing the short reads
+## that is taking a long time. let that run overnight,  
 
 
