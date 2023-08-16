@@ -1269,9 +1269,411 @@ grep -c "^@" allChrisHostDepletionTrial_noShorts.fastq
 ssh -p 30419 -i /home/daniel/.ssh/./id_ed25519 ubuntu@129.70.51.6 \
   "grep -c "^@" /vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fastq"
 
+grep -c "^@" /vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fastq
+
 ## there are 1,664,548 reads in the passed reads. 
 ## there are 617,842 unblocked reads. 
 ## so there should be ~1 million reads after removing the short reads
 ## that is taking a long time. let that run overnight,  
+
+
+
+path2get=/media/vol1/daniel/spruce/Pabies-haploid_withOrganelles.fa
+path2put="/vol/piceaNanopore/dan/chrisHostDepletionTrial/spruceRefGenome/"
+scp -P 30419 -i /home/test/.ssh/lab2denbi $path2get ubuntu@129.70.51.6:$path2put
+
+## next day: that is taking forever! one overnight gives us ~100000 reads.
+##  we may need to shut that down  just curious, if we simply remove all 
+## short reads, does this approach the right numbers? knowing that we 
+## should have ~1 million reads after removal of unblocked reads?
+  
+allPassed="/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/fastq_pass/allChrisHostDepletionTrial_pass.fastq"
+seqtk seq -L 500 $allPassed > allChrisHostDepletionTrial_biggerThan500.fastq
+
+grep -c "^@" allChrisHostDepletionTrial_biggerThan500.fastq ## 1211902
+## about 200,000 too many, try a stricter cutoff:
+
+seqtk seq -L 600 $allPassed > allChrisHostDepletionTrial_biggerThan600.fastq
+grep -c "^@" allChrisHostDepletionTrial_biggerThan600.fastq ## 1180127, closer
+
+seqtk seq -L 700 $allPassed > allChrisHostDepletionTrial_biggerThan700.fastq
+grep -c "^@" allChrisHostDepletionTrial_biggerThan700.fastq ## 1162100, pretty much the same. weird.
+## let's keep the 600 bp read length minimum, keep going. 
+
+## two days later, seqkit is still going. 
+## can seqtk do it better?
+
+## we need the names of all the reads in the raw nanopore data:
+
+sed -n '1~4p' fastq_pass/allChrisHostDepletionTrial_pass.fastq | \
+cut -f 1 -d " " | \
+sed "s/^@//" > allChrisHostDepletionTrial_pass_names.txt
+
+wc -l allChrisHostDepletionTrial_pass_names.txt               ## 1664477
+wc -l fastq_pass/allChrisHostDepletionTrial_pass.fastq        ## 1664477 (x4)
+wc -l unblocked_read_ids.txt                                  ##  617842
+
+## 1664477 - 617842 = 1046635, should be 1,046,635 reads after we remove unblocked reads
+
+## take out the names of the unblocked reads from the list of all read names:
+
+sort <(cat allChrisHostDepletionTrial_pass_names.txt unblocked_read_ids.txt) > comboNames.txt
+uniq -u comboNames.txt > allChrisHostDepletionTrial_noShorts_names.txt
+
+wc -l allChrisHostDepletionTrial_noShorts_names.txt ## 1319301, that didn't work.
+
+## I guess some of these unblocked read ids weren't included in the final
+## passed reads by minknow. Will this offend seqtk if there are unmatched 
+## names in the list?:
+
+seqtk subseq fastq_pass/allChrisHostDepletionTrial_pass.fastq \
+ allChrisHostDepletionTrial_noShorts_names.txt > allChrisHostDepletionTrial_noShorts.fastq
+
+wc -l allChrisHostDepletionTrial_noShorts.fastq ## 5005332 / 4 = 1251333
+## 1,251,333 reads after we get rid of unblocked reads. Not to different from:
+## 1,180,127 reads when we remove reads < 600 bp long, see below
+
+## files sizes:
+## <600 bp file size = 11348659574
+## reads-manually-removed file size = 11420259495
+
+11348659574 - 11420259495 = -71599921
+
+## ~70 megabytes difference in file size. Is it worth redoing 
+## the pipeline below with this file?
+## soon but not yet.
+
+###########
+
+## for now build the pipeline with crude, <600 bp reads removed file:
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/alignment
+
+genome="/vol/piceaNanopore/dan/chrisHostDepletionTrial/spruceRefGenome/Pabies-haploid_withOrganelles.fa"
+reads="/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_biggerThan600.fastq"
+#reads="/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fastq"
+#minimap2 -t 20 -ax map-ont $genome $reads > bigReadsAlign2Spruce.sam  
+## trying to debug with better settings, see below:
+minimap2 -R "@RG\\tID:spruceDep\\tSM:spruceDep" -I12g -t 20 -ax map-ont $genome $reads > bigReadsAlign2Spruce.sam  
+
+## what is our range of mapQ scores...  
+
+## I think we need picard/gatk:
+
+conda update -n base -c defaults conda
+
+conda create -n gatk -c bioconda gatk4 picard 
+
+conda create -n samtools -c bioconda "samtools>=1.15"
+
+conda activate gatk
+
+conda install -c bioconda samtools ## for some reason, the version I can 
+## get with bioconda is old. use ubuntu rep instead (Apt)
+
+conda remove -n gatk --all
+
+## had to add an old ssl library for this??
+## needed an old repo added to apt sources.list:
+deb http://security.ubuntu.com/ubuntu xenial-security main
+## then install was okay
+sudo apt install libssl1.0.0
+
+## https://gatk.broadinstitute.org/hc/en-us/articles/13832754678171-QualityScoreDistribution-Picard-
+
+picard QualityScoreDistribution \
+  I=bigReadsAlign2Spruce.sam \
+  O=mapQdist_christDep.txt \
+  CHART=mapQdist_christDep.pdf
+
+
+## and of course something is off with our sam file
+
+## following: https://gatk.broadinstitute.org/hc/en-us/articles/360035891231-Errors-in-SAM-or-BAM-files-can-be-diagnosed-with-ValidateSamFile
+
+## using new picard syntax:
+picard ValidateSamFile -I bigReadsAlign2Spruce.sam -MODE SUMMARY
+
+## doesn't work yet. try old way
+picard ValidateSamFile \
+      I=bigReadsAlign2Spruce.sam \
+      MODE=SUMMARY
+
+########################################################################
+#### HISTOGRAM    java.lang.String
+##Error Type      Count
+##ERROR:MISSING_READ_GROUP        1
+##ERROR:MISSING_SEQUENCE_DICTIONARY       37027303
+##WARNING:QUALITY_NOT_STORED      52
+##WARNING:RECORD_MISSING_READ_GROUP       37229909
+########################################################################
+
+picard ValidateSamFile \
+      I=bigReadsAlign2Spruce.sam \
+      IGNORE_WARNINGS=true \
+      MODE=VERBOSE
+
+## this tells us that basically all alignments are missing a sequence dictionary...
+
+##############################################################################################
+# ERROR: Record 71, Read name cebbe9b3-e56e-4479-8c15-5b86cc621719, Empty sequence dictionary.
+# ERROR: Record 72, Read name cebbe9b3-e56e-4479-8c15-5b86cc621719, Empty sequence dictionary.
+##############################################################################################
+
+## so following: 
+## https://gatk.broadinstitute.org/hc/en-us/articles/360035531652-FASTA-Reference-genome-format
+## we need both a gatk fasta dictionary file, and a fasta index
+
+## gatk fasta dictionary
+
+genome="/vol/piceaNanopore/dan/chrisHostDepletionTrial/spruceRefGenome/Pabies-haploid_withOrganelles.fa"
+
+gatk CreateSequenceDictionary -R $genome -O Pabies-haploid_withOrganelles.dict
+
+less bigReadsAlign2Spruce.sam
+
+## fasta index 
+samtools faidx $genome -o Pabies-haploid_withOrganelles.fai
+
+## both of these put the file right next to the ref genome in:
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/spruceRefGenome
+
+conda activate gatk
+
+picard ValidateSamFile \
+      I=bigReadsAlign2Spruce.sam \
+      MODE=SUMMARY
+
+picard ValidateSamFile \
+      I=bigReadsAlign2Spruce.sam \
+      IGNORE_WARNINGS=true \
+      MODE=VERBOSE
+
+picard AddOrReplaceReadGroups
+
+picard AddOrReplaceReadGroups \
+    I=$genome \
+    O="Pabies-haploid_withOrganelles.bam" \
+    RGID=1 \
+    RGLB=chrisDepletion \
+    RGPU=55579c61d43f72e259ebddaedd7434c488f47e6a \
+    RGPL=nanopore \
+    RGSM=spruce \
+    CREATE_INDEX=True
+
+## it's not finding dictionaries...do we have to be in same directory
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData
+
+/vol/piceaNanopore/dan/chrisHostDepletionTrial/spruceRefGenome
+
+## ugh, screw gatk/picard
+
+## first step, get totally unmapped reads - how many are there?
+
+## samtools needs proper headers. Minimap2 doesn't make them, 
+## unless you give it enough memory to swallow the whole 
+## reference genome at once, with --I12g
+## see: 
+## https://github.com/lh3/minimap2/blob/master/FAQ.md#3-the-output-sam-doesnt-have-a-header
+
+samtools view bigReadsAlign2Spruce.sam \
+  --threads 20 \
+  -q "5" \
+  -U "poorHostMatches.sam" \
+  -h \
+  -O SAM \
+  -o "goodHostMatches.sam"
+
+## convert these to poor matches back to fastq:
+samtools fastq poorHostMatches.sam > poorHostMatches.fastq
+## to get the totally unalign reads:
+samtools fastq -f 4 bigReadsAlign2Spruce.sam > hostNonMatches.fastq 
+
+grep -c "^@" poorHostMatches.fastq ## 257,671 reads...
+grep -c  "^@" hostNonMatches.fastq ## 55,466 reads...
+
+## let's go with just the poorHostMatches, and the raw reads
+
+## goal for tonight - get metaflye going on at least one of these
+
+## look at the raw reads with fastqc 
+
+conda create -n fastqc -c bioconda fastqc
+
+conda activate fastqc
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial
+
+fastqc -o /vol/piceaNanopore/dan/chrisHostDepletionTrial/fastqcOut/poorHostMatches/ \
+       --memory 1024 \
+       -t 20 \
+    /vol/piceaNanopore/dan/chrisHostDepletionTrial/alignment/poorHostMatches.sam
+
+fastqc -o /vol/piceaNanopore/dan/chrisHostDepletionTrial/fastqcOut/allReads \
+       --memory 1024 \
+       -t 20 \
+  /vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/fastq_pass/allChrisHostDepletionTrial_pass.fastq &> allChrisFastqc.log
+
+## let's get this local and look at it
+
+path2get=/vol/piceaNanopore/dan/chrisHostDepletionTrial/fastqcOut/
+scp -rP 30419 ubuntu@129.70.51.6:$path2get .
+
+## there are fragments much smaller than our reads
+## The alignment is giving only fragments back out of the 
+## sam file. We don't want the actual alignments, 
+## we just want every fragment that had some alignment to
+## host.  
+
+## back on denbi
+
+
+## for instance let's find this read in it's various forms:
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial
+
+#seqName="a102de22-3e5a-406a-835c-bd58d58052bd"
+
+seqName="01c5b5f5-d3e9-4c3f-8aa3-308e008f5328"
+
+echo "#####################################################################" > randomReadCheckAlignment.txt && \
+echo "########### allChrisHostDepletionTrial_biggerThan600.fastq ##########" >> randomReadCheckAlignment.txt && \
+grep -A 1 $seqName nanoporeRunData/allChrisHostDepletionTrial_biggerThan600.fastq >> randomReadCheckAlignment.txt && \
+echo "" >> randomReadCheckAlignment.txt && \
+echo "#####################################################################" >> randomReadCheckAlignment.txt && \
+echo "#################### bigReadsAlign2Spruce.sam #######################" >> randomReadCheckAlignment.txt && \
+grep $seqName alignment/bigReadsAlign2Spruce.sam   >> randomReadCheckAlignment.txt
+echo "" >> randomReadCheckAlignment.txt && \
+echo "#####################################################################" >> randomReadCheckAlignment.txt && \
+echo "######################  goodHostMatches.sam  ########################" >> randomReadCheckAlignment.txt && \
+grep $seqName alignment/goodHostMatches.sam   >> randomReadCheckAlignment.txt
+echo "" >> randomReadCheckAlignment.txt && \
+echo "#####################################################################" >> randomReadCheckAlignment.txt && \
+echo "#####################   poorHostMatches.sam   #######################" >> randomReadCheckAlignment.txt && \
+grep $seqName alignment/poorHostMatches.sam   >> randomReadCheckAlignment.txt
+
+less randomReadCheckAlignment.txt
+
+## ugh. losing track here. We want a way to remove reads that align well to 
+## to the spruce genome. Perhaps a better way to do this is to set a really
+## high threshold for matches to spruce genome, and collect the names of 
+## these sequences
+
+## the first part is easy:
+
+samtools view bigReadsAlign2Spruce.sam \
+  --threads 20 \
+  -q "30" \
+  -U "poorHostMatches.sam" \
+  -h \
+  -O SAM \
+  -o "goodHostMatches.sam"
+
+## the second part is not. How do we collect the names of the sequences
+## with good matches? 
+
+## /^@RG gets us to the alignments, past the really long header
+
+samtools view -@ 20 goodHostMatches.sam | head
+
+samtools view -@ 20 goodHostMatches.sam | cut -f1 | sort | uniq > goodHostMatches_readNames.txt
+
+wc -l goodHostMatches_readNames.txt ## 1,026,367, out of maybe 1,180,000. Hmm...that's most. 
+
+## oh well. Try to get rid of them, see if seqtk works faster than our
+## grep solution with seqkit
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData
+
+echo "22374732-69a0-477f-b5de-1d7fbfba33fa" > name.lst
+echo "01c5b5f5-d3e9-4c3f-8aa3-308e008f5328" >> name.lst
+seqtk subseq fastq_pass/allChrisHostDepletionTrial_pass.fastq name.lst > out.fq
+## seems to work
+
+## to do this we need to subtract the goodhostmatches from the larger
+## pool of unblocked reads. 
+
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial
+
+allChrisHostDepletionTrial_biggerThan600.fastq
+
+alignment/goodHostMatches_readNames.txt
+
+## the names of our fastq file should be:
+sed -n '1~4p' allChrisHostDepletionTrial_biggerThan600.fastq | \
+cut -f 1 -d " " | \
+sed "s/^@//" > allChrisHostDepletionTrial_biggerThan600_names.txt
+
+allChrisHostDepletionTrial_biggerThan600_names.txt
+goodHostMatches_readNames.txt 
+
+sort <(cat goodHostMatches_readNames.txt allChrisHostDepletionTrial_biggerThan600_names.txt) > comboNames.txt
+uniq -u comboNames.txt > nonHostReadNames.txt
+
+## use this to subset to just reads of interest:
+seqtk subseq allChrisHostDepletionTrial_biggerThan600.fastq nonHostReadNames.txt > nonHostReads.fastq
+## whoah that was fast. 
+
+wc -l goodHostMatches_readNames.txt                      ## 1026367
+wc -l allChrisHostDepletionTrial_biggerThan600_names.txt ## 1180067
+wc -l comboNames.txt                                     ## 2206434 
+wc -l <(uniq comboNames.txt)                             ## 1180067
+wc -l <(uniq -u comboNames.txt)                          ## 153700
+wc -l nonHostReadNames.txt                               ## 153700
+wc -l nonHostReads.fastq                                 ## 614800 / 4 = 153700
+
+## so we theoretically end up with ~153,700 reads that are not well aligned to host. 
+
+## run fastqc on them and try an assembly
+
+mkdir /vol/piceaNanopore/dan/chrisHostDepletionTrial/fastqcOut/nonHostReads
+
+fastqc -o /vol/piceaNanopore/dan/chrisHostDepletionTrial/fastqcOut/nonHostReads/ \
+       --memory 1024 \
+       -t 20 \
+    /vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/nonHostReads.fastq &> fastqc.log &
+
+path2get=/vol/piceaNanopore/dan/chrisHostDepletionTrial/fastqcOut/nonHostReads/ 
+scp -rP 30419 ubuntu@129.70.51.6:$path2get 
+
+## really need to update my nanopore qc.
+## try nanopack tools:
+
+conda install -c bioconda nanoqc
+
+## they look ok. try an assembly:
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial
+
+conda activate flye
+
+reads=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/nonHostReads.fastq
+outdir=/vol/piceaNanopore/dan/chrisHostDepletionTrial/assemblies/nonHostReadAssembly
+
+nohup flye --meta \
+    --nano-raw $reads \
+    --threads 25 \
+    --out-dir $outdir \
+    &> noHostAssembly.log &
+
+## quick, 10 min or so, maybe less
+## that looks weird. some of the host definitely slipped through. Do gene predictions on it tomorrow. 
+
+## will flye accept the full fastq, with a lot of host reads?
+
+
+reads=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fastq
+outdir=/vol/piceaNanopore/dan/chrisHostDepletionTrial/assemblies/hostReduced/
+
+nohup flye --meta \
+    --nano-raw $reads \
+    --threads 25 \
+    --out-dir $outdir \
+    &> reducedHostAssembly.log &
+
+## started 1 am, aug17
 
 
