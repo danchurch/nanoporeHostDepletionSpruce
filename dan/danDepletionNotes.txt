@@ -38,6 +38,8 @@ readfish
 ## according to Chris, it's important to add ourselves
 ## to the minknow user group:
 
+groups test
+
 sudo usermod -a -G minknow test
 
 ## we can watch minknow on our extra office computer
@@ -97,7 +99,6 @@ less /opt/ont/minknow/conf/package/sequencing/sequencing_MIN106_DNA.toml
 
 ## back it up, then play with it
 
-
 cd /opt/ont/minknow/conf/package/sequencing/
 
 cp sequencing_MIN106_DNA.toml sequencing_MIN106_DNA.toml.bk
@@ -153,6 +154,8 @@ wget https://raw.githubusercontent.com/LooseLab/readfish/master/examples/human_c
 ## found exactly the same genome as is used in their 
 ## example...
 
+cd /media/vol1/daniel/hostDepletion/
+
 ln -s /home/chris/hg38.fa /media/vol1/daniel/hostDepletion/hg38.fa
 
 ## for lara:
@@ -167,6 +170,9 @@ minimap2 -d hg38.mmi hg38.fa
 
 ## check the validity of our toml file:
 
+readfish validate 
+
+
 readfish validate human_chr_selection.toml
 
 ## looks good. 
@@ -174,8 +180,11 @@ readfish validate human_chr_selection.toml
 ## started a simulation run on minknow. 
 ## now with readfish
 
+conda activate readfish
+cd /media/vol1/daniel/hostDepletion
+
 readfish targets --device MN40608 \
-              --experiment-name "RU Test basecall and map" \
+              --experiment-name "debugging22_8_23_try3" \
               --toml /media/vol1/daniel/hostDepletion/human_chr_selection.toml \
               --log-file ru_test.log
 
@@ -188,17 +197,46 @@ readfish targets --device MN40608 \
 
 sudo chmod 775 /tmp/.guppy/5555
 
+ls -l /tmp/.guppy/5555
+
 #sudo chmod 777 /tmp/.guppy/5555
 
 ## chris has this line for starting a new basecall server:
 
 guppy_basecall_server --config dna_r9.4.1_450bps_fast.cfg -p 5555 -l /tmp/guppy -x 'cuda:0'
 
-
 ## already in use. Stop run and try again. works, but do we really need two guppy 
 ## servers running?
 
-## because of the 
+## generally, you don't. It is just that the config file for guppy might not be right for 
+## the simulation. In our case, we using r10 cells for actual data collection, but the 
+## simulation requires the older guppy configuration file.
+
+
+## checklist for getting minion, readfish, and guppy working together for the 
+## tutorial:
+
+## make sure a simulated run actually starts with minion. Might take several tries,
+## a lot of times errors pop up, when messages like "script failure",
+## "internal error", etc. And all you can do is restart the run and/or 
+## restart the computer. 
+
+## make sure guppy is running with the right config file. The fast5 files in the
+## readfish tutorial are made with an older r9 flow cell, so guppy will 
+## probably perform better with the "dna_r9.4.1_450bps_fast.cfg" setting.
+## change to this config file, and restart the guppy service.
+## to see how to do this, search "resetting guppy with a new config file" below
+
+## make sure guppy client and guppy server are the same version
+
+## make sure you as a user are a member of the minknow group, because...
+
+## make sure the right file permissions are in place for the minknow group,
+## not just the minknow user, can access the port for guppy 
+## this is usually the /tmp/.guppy/5555 file, indicated in our toml files
+
+sudo chmod 775 /tmp/.guppy/5555
+
 ## I had to change the following to the readfish toml:
 
 host= "ipc:///tmp/.guppy/"
@@ -225,7 +263,9 @@ https://github.com/LooseLab/readfish/issues/221
 
 ## they mention that our guppy server and client software should line up, version-wise:
 guppy_basecall_server --version ## gives us version 6.5.7
+
 pip list | grep pyguppy  ## version 6.4.2
+
 ## not the same
 
 ## does this help?
@@ -252,9 +292,9 @@ sudo systemctl status guppyd
 
 
 readfish targets --device MN40608 \
-              --experiment-name "RU Test basecall and map" \
+              --experiment-name "debug_22_8_23_try3" \
               --toml /media/vol1/daniel/hostDepletion/human_chr_selection.toml \
-              --log-file ru_test.log
+              --log-file readfishtest.log
 
 ## and works!!! yay!
 
@@ -738,6 +778,9 @@ sudo systemctl restart guppyd
 
 sudo systemctl status guppyd
 
+
+######### resetting guppy with a new config file #####
+
 ## as before, the gringer lab has some hints about this:
 
 https://gringer.gitlab.io/presentation-notes/2021/10/08/gpu-calling-in-minknow/#verifying-the-configuration-change-1
@@ -756,9 +799,14 @@ sudo cp /lib/systemd/system/guppyd.service /lib/systemd/system/guppyd.service.bk
 
 sudo ln -s /lib/systemd/system/guppyd.service.bk /etc/systemd/system/guppyd.service.bk
 
+less /etc/systemd/system/guppyd.service
+
 ## try a manual edit?
 
+
+## we want to use the r9 setting for our simulations, but an r10 cfg for our 
 sudo vim /etc/systemd/system/guppyd.service
+
 ## changed the following line:
 ExecStart=/opt/ont/guppy/bin/guppy_basecall_server --log_path /var/log/guppy --config dna_r9.4.1_450bps_fast.cfg --num_callers 1 --port /tmp/.guppy/5555 --ipc_threads 3 --device cuda:all
 ## to:
@@ -1057,6 +1105,8 @@ du -sh ## 2.1 G
 ## he also has this run:
 cd /var/lib/minknow/data/Pabies_bulk_fast5/Version_1/20230621_1347_MN40608_FAU29445_a01d2181
 du -sh ## 650 M
+
+cd /var/lib/minknow/data/Pabies_bulk_fast5/
 
 ## not sure 
 ## this is only 112M of passed fastq sequence data. That can't possibly be what I'm simulating with...
@@ -1674,6 +1724,624 @@ nohup flye --meta \
     --out-dir $outdir \
     &> reducedHostAssembly.log &
 
-## started 1 am, aug17
+## looks like that took ~2 hours.
+## results are interesting, can't immediately dismiss them at least,
+## a few circular genomes reported, some weird initial blasts, etc.
+
+## so what now? 
+
+## gene prediction, send off to KEGG. And try binning, you never know. 
+
+conda activate prodigal
+
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/assemblies/hostReduced/
+
+hostReducedAssembly=/vol/piceaNanopore/dan/chrisHostDepletionTrial/assemblies/hostReduced/assembly.fasta
+prodigal \
+  -a spruceReducedMicrobiomeMetagenome.genes.faa \
+  -d spruceReducedMicrobiomeMetagenome.genes.fna \
+  -f gff \
+  -o spruceReducedMicrobiomeMetagenome.genes.gff \
+  -i $hostReducedAssembly
+
+grep -c "^>" spruceReducedMicrobiomeMetagenome.genes.faa ## 97122 genes
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/assemblies/nonHostReadAssembly/
+nonHostAssembly=/vol/piceaNanopore/dan/chrisHostDepletionTrial/assemblies/nonHostReadAssembly/assembly.fasta
+
+prodigal \
+  -a spruceRemovedMicrobiomeMetagenome.genes.faa \
+  -d spruceRemovedMicrobiomeMetagenome.genes.fna \
+  -f gff \
+  -o spruceRemovedMicrobiomeMetagenome.genes.gff \
+  -i $nonHostAssembly
+
+grep -c "^>" spruceRemovedMicrobiomeMetagenome.genes.faa ## 4687. Huh. Trying to remove host may be a bad idea.
+
+## get local and send off to kegg for fun:
+
+clear
+ls -l /vol/piceaNanopore/dan/chrisHostDepletionTrial/assemblies/hostReduced/spruceReducedMicrobiomeMetagenome.genes.faa
+ls -l /vol/piceaNanopore/dan/chrisHostDepletionTrial/assemblies/nonHostReadAssembly/spruceRemovedMicrobiomeMetagenome.genes.faa
+
+#path2get=/vol/piceaNanopore/dan/chrisHostDepletionTrial/assemblies/hostReduced/spruceReducedMicrobiomeMetagenome.genes.faa
+path2get=/vol/piceaNanopore/dan/chrisHostDepletionTrial/assemblies/nonHostReadAssembly/spruceRemovedMicrobiomeMetagenome.genes.faa
+scp -rP 30419 -i ~/.ssh/id_ed25519 ubuntu@129.70.51.6:$path2get .
+
+ls /home/test/.ssh/lab2denbi
+
+## back to binning. Try using the same 3 softwares as the class. 
+
+## metabat2 install
+conda create -n metabat2 -c bioconda metabat2
+
+## concoct install
+
+#conda config --add channels defaults
+#conda config --add channels bioconda
+#conda config --add channels conda-forge
+conda create -n concoct -c bioconda python=3 concoct
+
+## nope. still issues with scitkit learn as before.
+
+## we can try what we did with the class - use a yaml file:
+conda env create -f concoct.yml
+
+## this is the yaml file I used:
+
+##############################
+name: concoct
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - concoct=1.1.0
+  - libopenblas=*=openmp*
+  - mkl
+  - python>=3
+  - samtools>=1.9
+  - scikit-learn=1.1.*
+variables:
+  USE_OPENMP: 1
+##############################
+
+## seems to work ok...
+
+## vamb install
+conda create -n vamb -c bioconda vamb minimap2
+## seems okay, but really out of date. Let's 
+## try with pip:
+
+conda remove -n vamb --all
+
+conda deactivate
+
+## let's try without conda, as recommended by the developers:
+
+pip install vamb ## and fails. jeezus. try in a conda environment
+
+conda create -n vamb 
+
+## ugh, not working. Try github:
+
+conda create -n vamb python=>=3.9.0
+
+conda activate vamb 
+
+cd /vol/piceaNanopore
+
+git clone https://github.com/RasmussenLab/vamb -b master
+
+cd vamb
+
+pip install -e .
+
+## maxbin install (??)
+## just curious, did maxbin2 ever fix it's issues?
+
+conda install -c bioconda maxbin2
+
+## failed 
+
+## taking forever. anyway, we got three. 
+
+## das tool install
+
+conda create -n das_tool -c bioconda das_tool
+
+DAS_Tool
+## seems okay
+
+## metabat2 binning
+
+conda activate metabat2
+
+
+## hostRemoved
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/hostRemoved
+readsHostRemoved=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/nonHostReads.fastq
+assemblyHostRemoved=/vol/piceaNanopore/dan/chrisHostDepletionTrial/assemblies/nonHostReadAssembly/assembly.fasta 
+
+## for our nanopore alignments we use minimap
+minimap2 -d assemblyHostRemoved.mmi $assemblyHostRemoved # make index
+
+## make the alignments,
+## following: https://github.com/RasmussenLab/vamb/blob/master/README.md
+
+minimap2 -t 25 -ax map-ont assemblyHostRemoved.mmi --split-prefix mmsplit $readsHostRemoved -R @RG\\tID:thisIsAreadGroup | samtools view -F 3584 -b --threads 25 > hostRemovedAligned2Contigs.bam
+
+
+minimap2 -t 25 -ax map-ont assemblyHostRemoved.mmi --split-prefix mmsplit $readsHostRemoved | samtools view -F 3584 -b --threads 25 > hostRemovedAligned2Contigs.bam
+
+## this fails. formatting issues with on-the-fly-SAM file, it seems. Don't want to spend time 
+## debugging, I think such a small metagenome can't be useful for mags, anyway. 
+
+## not sure if the other, larger file will be any better, but gotta try:
+
+## hostReduced
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/hostReduced
+readsHostReduced=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fastq
+assemblyHostReduced=/vol/piceaNanopore/dan/chrisHostDepletionTrial/assemblies/hostReduced/assembly.fasta 
+
+## for our nanopore alignments we use minimap
+minimap2 -d assemblyHostReduced.mmi $assemblyHostReduced # make index
+
+## make the alignments, takes 
+
+minimap2 -t 25 -ax map-ont assemblyHostReduced.mmi -I30g --split-prefix mmsplit $readsHostReduced | samtools view -F 3584 -b --threads 25 > hostReducedAligned2Contigs.bam
+
+## not working...why not?
+minimap2 -t 25 -ax map-ont assemblyHostReduced.mmi \
+  -I30g \
+  -o test.sam \
+  --split-prefix mmsplit \
+  $readsHostReduced 
+
+## first read is 
+22374732-69a0-477f-b5de-1d7fbfba33fa
+
+## that seems fine, so I guess it is the second part of the pipe
+## that is breaking?
+
+## checking out that flag combination 
+## (using superhandy site here: http://broadinstitute.github.io/picard/explain-flags.html)
+
+## read fails platform/vendor quality checks (0x200) 512
+## read is PCR or optical duplicate (0x400) 1024
+## supplementary alignment (0x800) 2048
+512+1024+2048  = 3584
+
+## anyway, that's not the issue. samtools just fails generally with it:
+
+samtools view test.sam
+
+samtools view -H test.sam
+
+## seems like the headers for all of our alignments 
+## are duplicated? 
+
+grep scaffold_3628 test.sam
+
+grep scaffold_3628 $assemblyHostReduced
+
+## are these duplicated with our assembly?
+
+grep ">" $assemblyHostReduced | sort > dupsInAss.txt
+grep ">" $assemblyHostReduced | sort | uniq -d ## none?
+grep ">" $assemblyHostReduced | sort | uniq -c > dupsInAss.txt ## really can't find these...
+
+## why is minimap creating a double header entry?
+
+## will this go away if we switch to fasta for the queries?
+seqtk seq -A $readsHostReduced > allChrisHostDepletionTrial_noShorts.fasta
+
+minimap2 -t 25 -ax map-ont assemblyHostReduced.mmi \
+  -I30g \
+  -o test.sam \
+  --split-prefix mmsplit \
+  allChrisHostDepletionTrial_noShorts.fasta
+
+samtools view test.sam ## still same problem
+
+grep contig_999 test.sam
+
+grep -n "SN:contig_1002" test.sam ## 1, 4777
+
+grep -n 22374732-69a0-477f-b5de-1d7fbfba33fa test.sam  ## 9552
+
+## starting on line 4777, all headers are repeated. Information starts
+## again on 9552. So can we delete lines 4777-9551? 
+
+## ok, last resort, let's delete them and see what happens
+
+samtools view test.sam ## works
+
+samtools view -hF 3584 --threads 25 test.sam > hostReducedAligned2Contigs.sam
+
+## seems to work. weird. Hope this doesn't cause any downstream issues.
+
+less $assemblyHostReduced 
+
+## sort and index the alignment. nanopore takes much more time than the illumina reads
+samtools sort -l 1 \
+    -n \
+    -@25 \
+    -o hostReducedAligned2ContigsSorted.bam \
+    -O BAM \
+    hostReducedAligned2Contigs.sam
+
+## vamb tools requires sorting by name, so can't can't index it:
+samtools index -@ 25 ./hostReducedAligned2ContigsSorted.bam ## throws errors
+
+## concoct needs sorting by coordinates, not name ("-n" above)
+
+## redo for concoct:
+samtools sort -l 1 \
+    -@25 \
+    -o hostReducedAligned2ContigsSortedforConcoct.bam \
+    -O BAM \
+    hostReducedAligned2Contigs.sam
+samtools index -@ 25 ./hostReducedAligned2ContigsSortedforConcoct.bam 
+
+## go forward with metabat
+conda activate metabat2
+
+mkdir metabat
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/hostReduced/metabat
+
+
+## define our variables
+
+assembly="/vol/piceaNanopore/dan/chrisHostDepletionTrial/assemblies/hostReduced/assembly.fasta"
+bam="/vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/hostReduced/hostReducedAligned2ContigsSorted.bam"
+otherBam="/vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/hostReduced/hostReducedAligned2ContigsSortedforConcoct.bam"
+
+## run the program
+runMetaBat.sh $assembly $bam
+
+## that produced nothing. Try with a differently formatted bam: 
+runMetaBat.sh $assembly $otherBam
+
+## nope, no bins. 
+
+## try the others...
+
+conda deactivate
+
+conda activate vamb
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/hostReduced
+
+## let's redo the above alignments...
+
+assemblyHostReduced=/vol/piceaNanopore/dan/chrisHostDepletionTrial/assemblies/hostReduced/assembly.fasta 
+reads=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fastq 
+alignment=
+readsAligned2Assembly4vamb.bam
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/hostReduced/vambOut
+
+wget https://raw.githubusercontent.com/RasmussenLab/vamb/37277e23fa1b28718eca4c6a5daa958f42758b13/src/concatenate.py
+
+python3 concatenate.py vambHostReducedHostAssembly.fna.gz $assemblyHostReduced 
+minimap2 -d catalogue.mmi vambHostReducedHostAssembly.fna.gz # make index
+
+minimap2 -t 25 -ax map-ont catalogue.mmi \
+  -I30g \
+  -o intermediateVambRead2AssemblyAlignments.sam \
+  --split-prefix mmsplit \
+  $reads
+
+samtools view -F 3584 -b --threads 20 intermediateVambRead2AssemblyAlignments.sam > readsAligned2Assembly4vamb.bam
+
+## has the same problems with duplicated headers as before
+
+grep -n "SN:S1Ccontig_1002" intermediateVambRead2AssemblyAlignments.sam ## 1, 4111
+
+## our first read is here:
+grep -nB 2 22374732-69a0-477f-b5de-1d7fbfba33fa intermediateVambRead2AssemblyAlignments.sam  ## line 8220 reads start
+
+## looks like our last header should be:
+grep -n -A1 -B2 "SN:S1Cscaffold_3628" intermediateVambRead2AssemblyAlignments.sam ## 4109, 8219
+
+## line 4110 has the PG info, keep it
+
+## we should be able to remove these duplicate headers:
+sed '4111, 8219d' intermediateVambRead2AssemblyAlignments.sam > intermediateVambRead2AssemblyAlignments_deDup.sam
+
+## try again 
+samtools view -F 3584 -b --threads 20 intermediateVambRead2AssemblyAlignments_deDup.sam \
+> readsAligned2Assembly4vamb.bam
+
+## vamb is complaining about sorting...
+
+samtools sort -l 1 \
+    -@25 \
+    -o readsAligned2Assembly4vambSorted.bam \
+    -O BAM \
+    readsAligned2Assembly4vamb.bam
+
+## seems to work. Weird, don't know why mininmap is creating duplicate headers. 
+## anyway, try vamb again:
+
+rm -r hostReducedVambOut/
+
+conda deactivate 
+
+conda activate vamb
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/hostReduced/vambOut/
+assemblyHostReduced=/vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/hostReduced/vambOut/vambHostReducedHostAssembly.fna.gz
+alignment=/vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/hostReduced/vambOut/readsAligned2Assembly4vambSorted.bam
+vamb --outdir hostReducedVambOut \
+  --fasta $assemblyHostReduced \
+  --bamfiles $alignment \
+  --minfasta 250000 \
+  -t 8  &
+
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/hostReduced/vambOut/hostReducedVambOut/bins
+
+## concoct
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/hostReduced/
+
+conda activate concoct 
+
+assembly="/vol/piceaNanopore/dan/chrisHostDepletionTrial/assemblies/hostReduced/assembly.fasta"
+readAlignments="/vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/hostReduced/hostReducedAligned2ContigsSortedforConcoct.bam"
+outdir="/vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/hostReduced/concoct/"
+
+cut_up_fasta.py $assembly -c 10000 -o 0 --merge_last -b concoctContigs_10K.bed > concoctContigs_10K.fa
+concoct_coverage_table.py concoctContigs_10K.bed $readAlignments > coverage_table.tsv
+
+concoct \
+  --composition_file concoctContigs_10K.fa \
+  --coverage_file coverage_table.tsv \
+  -t 25 \
+  -b $outdir
+
+cd $outdir
+merge_cutup_clustering.py clustering_gt1000.csv > clustering_merged.csv
+
+mkdir concoct_bins
+
+extract_fasta_bins.py $assembly clustering_merged.csv --output_path concoct_bins
+
+## change names:
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/hostReduced/concoct/concoct_bins
+
+for i in *; do
+  mv $i "concoct_$i"
+done
+
+## example: concoct_15.fa
+
+## well, concoct found a lot of bins. most of them are probably trash, but...
+## vamb also found some. what happened to metabat?
+
+## checked again, and metabat is a no-go
+
+## let's try das_tool on just the two sets of bins that we have.
+
+conda deactivate 
+
+conda activate das_tool
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/refine
+
+concoctBins=/vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/hostReduced/concoct/concoct_bins
+vambBins=/vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/hostReduced/vambOut/hostReducedVambOut/bins
+assembly=/vol/piceaNanopore/dan/chrisHostDepletionTrial/assemblies/hostReduced/assembly.fasta
+
+ls $concoctBins
+ls $vambBins
+ls $assembly
+
+
+find . -name Fasta_to_Contig2Bin.sh 
+
+## concoct:
+Fasta_to_Contig2Bin.sh \
+    -e fa \
+    -i $concoctBins \
+    > concoct.contigs2bin.tsv
+
+head concoct.contigs2bin.tsv ## that looks okay
+
+## vamb
+Fasta_to_Contig2Bin.sh \
+    -e fna \
+    -i $vambBins \
+    > vamb.contigs2bin.tsv
+
+head vamb.contigs2bin.tsv ## "S1C" is appended, like before, need to get rid of these
+
+## we need to cut the first three letters out of or so...
+cut --complement -c 1-3 vamb.contigs2bin.tsv > vamb.contigs2bin_edited.tsv
+
+less vamb.contigs2bin_edited.tsv ## better
+
+DAS_Tool  -i concoct.contigs2bin.tsv,vamb.contigs2bin_edited.tsv \
+    -l concoct,vamb \
+    -c $assembly \
+    -t 25 \
+    --write_bins \
+    --score_threshold=0.1 \
+    -o hostReducedBinsRefined
+
+## hah, even with that low threshold, one genome 
+## survives:
+
+/vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/refine/hostReducedBinsRefined_DASTool_bins/concoct_76.fa
+
+## surprised it was a concoct genome that survived...does order matter?
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/refine/dasOut
+DAS_Tool  -i ../vamb.contigs2bin_edited.tsv,../concoct.contigs2bin.tsv \
+    -l vamb,concoct \
+    -c $assembly \
+    -t 25 \
+    --write_bins \
+    --score_threshold=0.1 \
+    -o hostReducedBinsRefined
+
+## I'm assuming this either a organelle or the remnants of the host...
+
+less /vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/refine/dasOut/hostReducedBinsRefined_DASTool_bins/concoct_76.fa
+## that is a chloroplast genome...of course
+
+## briefly checking the other VAMB bins...
+
+## vae_17.fna has matches to a walking stick (Timema) genome? wtf
+## plus a rrna 5s subunit match to a cedar tree? double wtf. 
+## anyway, some weird stuff
+
+## hope dies last maybe best to try phyllophlan and checkM on these things.
+
+## checkM
+
+#conda config --set channel_priority flexible
+conda create -n checkm -c bioconda checkm-genome
+#conda config --set channel_priority strict
+
+conda deactivate
+conda activate checkm
+
+## variables
+
+## we can put our checkm outputs here
+
+checkMout="/vol/piceaNanopore/dan/chrisHostDepletionTrial/qualityCheck/"
+
+cd $checkMout
+
+concoctBins=/vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/hostReduced/concoct/concoct_bins
+
+vambBins=/vol/piceaNanopore/dan/chrisHostDepletionTrial/binning/hostReduced/vambOut/hostReducedVambOut/bins
+
+nohup checkm lineage_wf -t 15 $vambBins qcVamb &> vambCheckm.log &
+
+nohup checkm lineage_wf -t 15 $concoctBins -x fa  qcConcoctBins  &> concoctCheckm.log &
+
+ls $concoctBins 
+
+## looks pretty dismal. MAGs are not possible here. 
+
+## vae_3175 may be mitochondrial
+
+## phylophlan
+
+conda config --set channel_priority flexible
+conda create --name phylophlan -c bioconda phylophlan
+conda config --set channel_priority strict
+
+
+## find Chris's run which did not use adaptive sequencing 
+## (the one used for simulations). 
+## try metagenome assembly and prediction of bacterial genes?
+
+## in both, include an alignment of all genes to mitochondrial 
+## and chloroplast genomes of spruce.
+
+## see if there is a significant in prokaryotic genes recovered.  
+
+## I guess the best yardstick here is the number of prokaryotic
+## and fungal genes, 
+
+## the easieast is the bacterial genes. 
+
+## where is chris's data, that we used for simulations of the spruce?
+
+
+## i think it is this?:
+
+
+ls -lh /media/vol2/chris/Pabies_tests/bulk_fast5_files/MinION-PC_20230621_1522_FAU29445_MN40608_sequencing_run_bigger_e77dd4cd_5395a225.fast5
+
+cd /media/vol2/chris/Pabies_tests/bulk_fast5_files/
+
+## but where is the fastq for this?
+cd /var/lib/minknow/data/Pabies_bulk_fast5/bigger/20230621_1517_MN40608_FAU29445_e77dd4cd
+
+## make a combined pass fastq for this, put it on denbi:
+
+cd /var/lib/minknow/data/Pabies_bulk_fast5/bigger/20230621_1517_MN40608_FAU29445_e77dd4cd/fastq_pass/
+
+
+## put this on denbi:
+path2get=/var/lib/minknow/data/Pabies_bulk_fast5/bigger/20230621_1517_MN40608_FAU29445_e77dd4cd/fastq_pass/allpabies_noAdaptSeq.fastq
+path2put="/vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/"
+scp -rP 30419 -i ~/.ssh/lab2denbi $path2get ubuntu@129.70.51.6:$path2put 
+
+## looks like it only ran for 4 hours:
+less /var/lib/minknow/data/Pabies_bulk_fast5/bigger/20230621_1517_MN40608_FAU29445_e77dd4cd/final_summary_FAU29445_e77dd4cd_5395a225.txt
+
+## huh, there are only 24 584 reads in our pabies simulation fastq file...seems small.
+
+## not sure if this will be comparable. where is the equivalent fastq_pass for our actual spruce depletion experiment
+
+## here, on the lab comp
+
+/var/lib/minknow/data/repeatingDansStuff1/21_7_23/20230721_1214_MN40608_FAS81869_d4801a32/fastq_pass
+
+## our sequence experiment for exclusion, where adaptive seqencincg "worked":
+ls /var/lib/minknow/data/repeatingDansStuff1/21_7_23/20230721_1214_MN40608_FAS81869_d4801a32
+
+
+
+## to convince myself that this worked, I want to compare the number of prokaryotic genes that come out 
+## an assembly from the non-adptive-seq sequencing run, and the adaptive seq run:
+
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/assemblies/hostReduced/
+
+## remind me, how many prok genes does prodigal think we have?:
+grep -c "^>" spruceReducedMicrobiomeMetagenome.genes.faa ## 97122, lots but how many are not from mitochondria and chloroplasts?
+
+
+## while we're here, grab these faa and send to ghost koala:
+path2get=/vol/piceaNanopore/dan/chrisHostDepletionTrial/assemblies/hostReduced/spruceReducedMicrobiomeMetagenome.genes.faa
+scp -rP 30419  ubuntu@129.70.51.6:$path2get . 
+
+## let's try an assembly with the  
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/
+
+conda activate flye
+
+reads=/vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/allpabies_noAdaptSeq.fastq
+outdir=/vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/allpabies_noAdaptSeq_assembly/
+#mkdir -p $outdir
+
+nohup flye --meta \
+    --nano-raw $reads \
+    --threads 25 \
+    --out-dir $outdir \
+    &> allpabies_noAdaptSeq_assembly.log &
+
+## and of course it fails.
+
+## remind myself why I don't filter reads through the picea genome again? 
+## one thing (maybe the first?) to report is simply the number of reads 
+## that don't map to host+organelles well
+
+spruceGenome=/vol/piceaNanopore/dan/chrisHostDepletionTrial/spruceRefGenome/Pabies-haploid_withOrganelles.fa
+reads=/vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/allpabies_noAdaptSeq.fastq
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/
+nohup minimap2  -I100g -t 20 -ax map-ont $spruceGenome $reads 1> noAdaptSeq_Align2Spruce.sam 2> noAdaptSeq_Align2Spruce.log &
+
+## the same process, using our adaptive seq reads:
+
+spruceGenome=/vol/piceaNanopore/dan/chrisHostDepletionTrial/spruceRefGenome/Pabies-haploid_withOrganelles.fa
+reads=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fastq
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/
+nohup minimap2  -I100g -t 25 -ax map-ont $spruceGenome $reads 1> adaptSeq_Align2Spruce.sam 2> adaptSeq_Align2Spruce.log &
+
+## this will result in both unmapped reads and poorly mapped reads.
+
+## how can we get these in a single list?
 
 
