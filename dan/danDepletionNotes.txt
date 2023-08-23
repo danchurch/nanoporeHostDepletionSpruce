@@ -2329,19 +2329,220 @@ nohup flye --meta \
 ## that don't map to host+organelles well
 
 spruceGenome=/vol/piceaNanopore/dan/chrisHostDepletionTrial/spruceRefGenome/Pabies-haploid_withOrganelles.fa
-reads=/vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/allpabies_noAdaptSeq.fastq
+noAdaptReads=/vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/allpabies_noAdaptSeq.fastq
 cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/
-nohup minimap2  -I100g -t 20 -ax map-ont $spruceGenome $reads 1> noAdaptSeq_Align2Spruce.sam 2> noAdaptSeq_Align2Spruce.log &
+nohup minimap2  -I100g -t 20 -ax map-ont $spruceGenome $noAdaptReads 1> noAdaptSeq_Align2Spruce.sam 2> noAdaptSeq_Align2Spruce.log &
 
 ## the same process, using our adaptive seq reads:
-
 spruceGenome=/vol/piceaNanopore/dan/chrisHostDepletionTrial/spruceRefGenome/Pabies-haploid_withOrganelles.fa
-reads=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fastq
+yesAdaptReads=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fastq
 cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/
-nohup minimap2  -I100g -t 25 -ax map-ont $spruceGenome $reads 1> adaptSeq_Align2Spruce.sam 2> adaptSeq_Align2Spruce.log &
+nohup minimap2  -I100g -t 25 -ax map-ont $spruceGenome $yesAdaptReads 1> adaptSeq_Align2Spruce.sam 2> adaptSeq_Align2Spruce.log &
 
-## this will result in both unmapped reads and poorly mapped reads.
+## these will result in both unmapped reads and poorly mapped reads.
+## I guess we take only the best reads and try assembling these:
 
-## how can we get these in a single list?
+samtools view -q 50 --threads 20 noAdaptSeq_Align2Spruce.sam > noAdapt_hostReads.sam
+
+cut -f1 noAdapt_hostReads.sam | wc -l ## 55817
+cut -f1 noAdapt_hostReads.sam | uniq | wc -l ## 19391 
+cut -f1 noAdapt_hostReads.sam | uniq > noAdapt_hostReadNames.txt 
+
+wc -l noAdapt_hostReadNames.txt ## 19391
+
+wc -l allpabies_noAdaptSeq.fastq ## 98336 / 4 = 24584 reads
+
+## 24584 - 19391 = 5193 reads that don't align well to host. 
+5193 / 24584 ## .211, or 21% 
+## get a fasta for these:
+
+grep "^@" allpabies_noAdaptSeq.fastq | cut --complement -c 1 | cut -f1 -d" " > allpabies_noAdaptSeq_names.txt
+
+sort <(cat allpabies_noAdaptSeq_names.txt noAdapt_hostReadNames.txt) | uniq -u > noAdapt_nonHost_readNames.txt 
+
+wc -l noAdapt_nonHost_readNames.txt ## 5193, as expected. 
+
+seqtk subseq allpabies_noAdaptSeq.fastq noAdapt_nonHost_readNames.txt > pAbies_noAdapt_nonHost.fastq 
+
+wc -l pAbies_noAdapt_nonHost.fastq  ## makes sense
+
+## does it make sense to try to assemble these?
+conda activate flye
+
+reads=pAbies_noAdapt_nonHost.fastq
+outdir=pAbies_noAdapt_nonHost/
+#mkdir -p $outdir
+nohup flye --meta \
+    --nano-raw $reads \
+    --threads 25 \
+    --out-dir $outdir \
+    &> allpabies_noAdaptSeq_assembly.log &
+## fails
+
+## repeat with host reduced dataset
+samtools view -q 50 --threads 20 adaptSeq_Align2Spruce.sam > adapt_hostReads.sam
+
+cut -f1 adapt_hostReads.sam | uniq > adapt_hostReadNames.txt 
+
+wc -l adapt_hostReadNames.txt
+
+
+yesAdaptReads=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fastq
+
+head $yesAdaptReads 
+
+grep -c "^@.* runid" $yesAdaptReads  ## 1251333
+
+wc -l $yesAdaptReads  ## 5005332 / 4 = 1251333
+
+grep "^@.* runid" $yesAdaptReads | cut --complement -c 1 | cut -f1 -d" " > allpabies_adaptSeq_names.txt
+
+wc -l allpabies_adaptSeq_names.txt ## 1251333 looks good
+
+sort <(cat allpabies_adaptSeq_names.txt adapt_hostReadNames.txt) | uniq -u > adapt_nonHost_readNames.txt 
+
+wc -l adapt_nonHost_readNames.txt ## 247594 reads
+
+seqtk subseq $yesAdaptReads adapt_nonHost_readNames.txt > pAbies_adapt_nonHost.fastq 
+
+grep -c "^@.* runid" pAbies_adapt_nonHost.fastq  ## 247594
+grep -c "^@.* runid" $yesAdaptReads  ## 1251333
+
+1251333 - 247594 ## 1003739
+
+247594/1251333 ## 19% 
+
+
+## does it make sense to try to assemble these?
+conda activate flye
+
+reads=pAbies_adapt_nonHost.fastq
+outdir=pAbies_adapt_nonHost/
+#mkdir -p $outdir
+
+nohup flye --meta \
+    --nano-raw $reads \
+    --threads 25 \
+    --out-dir $outdir \
+    &> allpabies_adaptSeq_assembly.log &
+
+## does it make any sense to run gene predictions on the raw reads?
+
+## can't hurt, I guess:
+
+mkdir -p genePreds/noAdapt_nonHost_genes
+
+
+cd genePreds/noAdapt_nonHost_genes
+
+## make a fasta
+seqtk seq -A /vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/pAbies_noAdapt_nonHost.fastq > pAbies_noAdapt_nonHost.fasta
+
+conda activate prodigal
+
+reads=/vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/genePreds/noAdapt_nonHost_genes/pAbies_noAdapt_nonHost.fasta
+
+
+prodigal \
+  -a pAbies_noAdapt_nonHost.genes.faa \
+  -d pAbies_noAdapt_nonHost.genes.fna \
+  -f gff \
+  -o pAbies_noAdapt_nonHost.genes.gff \
+  -i $reads
+
+grep -c ">" pAbies_noAdapt_nonHost.genes.fna ## 11356 genes, from a 13M file
+
+## file size is actually 12985120 bytes
+11356/13 = 873.5 #gene/M
+11356/12985120 = 0.0008745394728735661 ## gene/byte
+12985120/11356 = 1143 ## bytes/gene
+
+## repeat with adaptive seq
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/
+
+reads=/vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/pAbies_adapt_nonHost.fastq
+seqtk seq -A $reads > pAbies_noAdapt_nonHost.fasta
+
+
+cd genePreds/adapt_nonHost_genes
+
+seqtk seq -A /vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/pAbies_adapt_nonHost.fastq > pAbies_adapt_nonHost.fasta
+
+reads=/vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/genePreds/adapt_nonHost_genes/pAbies_adapt_nonHost.fasta
+
+prodigal \
+  -a pAbies_adapt_nonHost.genes.faa \
+  -d pAbies_adapt_nonHost.genes.fna \
+  -f gff \
+  -o pAbies_adapt_nonHost.genes.gff \
+  -i $reads
+
+grep -c ">" pAbies_adapt_nonHost.genes.fna ## 610658 prokaryotic genes predicted from these adaptive seq non-host reads
+
+## 672778641 bytes or ~ 642M
+
+610658/642 = 951.18
+
+610658/672778641 = 0.000907665557117471
+
+672778641/610658 = 1101.7 ## bytes/gene
+
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/
+
+
+grep -c "^@.* runid=" fastq_pass/allChrisHostDepletionTrial_pass.fastq ## 1,664,477 reads, 12gig
+
+## I don't really understand. The unblocked read file has 617842 sequences,
+## the unblocked read file has 617,842 reads, but not all passed read quality..
+
+grep -c "^@.* runid=" allChrisHostDepletionTrial_noShorts.fastq ## 1,251,333 reads, 11gig
+
+## somehow, rejecting 600000 reads didn't improve our ratio of non-host reads?
+
+## probably several things at play here, not the least that we are comparing a 
+## tiny run to a big run. 
+
+
+ls -lh /vol/piceaNanopore/dan/chrisHostDepletionTrial/assemblies/hostReduced/assembly.fasta
+
+ls -lh /vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/pAbies_adapt_nonHost/assembly.fasta
+
+grep -c "^>" /vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/pAbies_adapt_nonHost/assembly.fasta
+## metagenome with 618 reads? 5.2M?  ugh
+
+## may
+
+
+cd /vol/piceaNanopore/dan/bactGenomes/genbank
+
+wget ftp://ftp.ncbi.nih.gov/genomes/genbank/bacteria/assembly_summary.txt
+
+wc -l /vol/piceaNanopore/dan/bactGenomes/genbank/assembly_summary.txt ## 1696420
+
+wget ftp://ftp.ncbi.nlm.nih.gov/genomes/README_assembly_summary.txt
+
+cd /vol/piceaNanopore/dan/bactGenomes/refSeq
+wget ftp://ftp.ncbi.nih.gov/genomes/refseq/bacteria/assembly_summary.txt
+
+wc -l /vol/piceaNanopore/dan/bactGenomes/refSeq/assembly_summary.txt ## 310753
+
+## seems like the genbank one is much bigger, though probably of much lower quality...
+## let's start with the refseq one.
+
+cd /vol/piceaNanopore/dan/bactGenomes/refSeq
+
+## let's assume they're all good:
+
+sed '1,2d' assembly_summary.txt | cut  -f 20  > ncbiRefGenomes.txt
+
+https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/900/128/725/GCA_900128725.1_BCifornacula_v1.0/GCA_900128725.1_BCifornacula_v1.0_genomic.fna.gz
+https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/019/958/295/GCA_019958295.1_ASM1995829v1/GCA_019958295.1_ASM1995829v1_genomic.fna.gz
+
+wget https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/030/730/875/GCA_030730875.1_ASM3073087v1/GCA_030730875.1_ASM3073087v1_genomic.fna.gz
+
+
+wget  -nd -p -r e robots=off -l 10 https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/030/730/925/GCA_030730925.1_ASM3073092v1
 
 
