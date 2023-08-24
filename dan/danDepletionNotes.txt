@@ -172,7 +172,6 @@ minimap2 -d hg38.mmi hg38.fa
 
 readfish validate 
 
-
 readfish validate human_chr_selection.toml
 
 ## looks good. 
@@ -181,12 +180,16 @@ readfish validate human_chr_selection.toml
 ## now with readfish
 
 conda activate readfish
+
 cd /media/vol1/daniel/hostDepletion
 
 readfish targets --device MN40608 \
               --experiment-name "debugging22_8_23_try3" \
               --toml /media/vol1/daniel/hostDepletion/human_chr_selection.toml \
               --log-file ru_test.log
+
+
+less /media/vol1/daniel/hostDepletion/human_chr_selection.toml 
 
 
 ## doesn't work, freezes. possibly due to the guppy server issues 
@@ -2537,12 +2540,49 @@ cd /vol/piceaNanopore/dan/bactGenomes/refSeq
 
 sed '1,2d' assembly_summary.txt | cut  -f 20  > ncbiRefGenomes.txt
 
-https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/900/128/725/GCA_900128725.1_BCifornacula_v1.0/GCA_900128725.1_BCifornacula_v1.0_genomic.fna.gz
-https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/019/958/295/GCA_019958295.1_ASM1995829v1/GCA_019958295.1_ASM1995829v1_genomic.fna.gz
-
-wget https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/030/730/875/GCA_030730875.1_ASM3073087v1/GCA_030730875.1_ASM3073087v1_genomic.fna.gz
+## but this doesn't give us the actual file, gives us the ftp folder, and wget 
+## isn't being allowed to recursively download
 
 
-wget  -nd -p -r e robots=off -l 10 https://ftp.ncbi.nlm.nih.gov/genomes/all/GCA/030/730/925/GCA_030730925.1_ASM3073092v1
+head ncbiRefGenomes.txt
+
+cut -d"/" -f 10  ncbiRefGenomes.txt > genNames.txt
+## add the file ending
+sed -i 's/.*/&_genomic.fna.gz/' genNames.txt
+paste ncbiRefGenomes.txt genNames.txt -d"/" > files2download.txt
+
+## these seem to work when I try them manually. Can we do a big download
+
+nohup wget  -i files2download.txt &> downloadRefSeq.log &
+
+wc -l files2download.txt
+
+## now, we need to make a blast database 
+
+## fungal genomes?:
+
+wget ftp://ftp.ncbi.nih.gov/genomes/genbank/fungi/assembly_summary.txt
+
+sed '1,2d' assembly_summary.txt | cut  -f 20  > ncbiFungalRefGenomes.txt
+head ncbiFungalRefGenomes.txt
+cut -d"/" -f 10  ncbiFungalRefGenomes.txt > fungalGenNames.txt
+## add the file ending
+sed -i 's/.*/&_genomic.fna.gz/' fungalGenNames.txt
+paste ncbiFungalRefGenomes.txt fungalGenNames.txt -d"/" > fungalfiles2download.txt
+
+wc -l fungalfiles2download.txt
+
+nohup wget  -i fungalfiles2download.txt &> downloadFungalRefSeq.log &
+
+### let that run for a while...
+
+
+## let's a database of 2000 fungal genomes and 10,000 bacterial genomes
+
+cd /vol/piceaNanopore/dan/bactGenomes/refSeq 
+nohup gunzip * &
+
+cd /vol/piceaNanopore/dan/fungalGenomes
+nohup gunzip * &
 
 
