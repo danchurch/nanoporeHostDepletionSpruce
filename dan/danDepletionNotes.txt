@@ -2306,7 +2306,6 @@ less /var/lib/minknow/data/Pabies_bulk_fast5/bigger/20230621_1517_MN40608_FAU294
 ls /var/lib/minknow/data/repeatingDansStuff1/21_7_23/20230721_1214_MN40608_FAS81869_d4801a32
 
 
-
 ## to convince myself that this worked, I want to compare the number of prokaryotic genes that come out 
 ## an assembly from the non-adptive-seq sequencing run, and the adaptive seq run:
 
@@ -2569,30 +2568,131 @@ nohup wget  -i files2download.txt &> downloadRefSeq.log &
 
 wc -l files2download.txt
 
-## now, we need to make a blast database 
+## revisiting this, it looks like we got a lot of pseudomonas aerigenosus, helicobacter, and campylobacter
 
-## fungal genomes?:
+grep ">" bactRefGenome.fa | cut -f2 -d" " 
+
+grep ">" bactRefGenome.fa | cut -f2 -d" " | sort | uniq | wc -l
+
+## can we balance this out a bit?
+
+cd /vol/piceaNanopore/dan/bactGenomes
+
+cut -f8 assembly_summary.txt | sort | uniq > bactGenomeNames_uniq.txt
+
+cut -f8 assembly_summary.txt | cut -f1,2 -d" " | sort | uniq | wc -l ## ~20,000 species
+
+cut -f8 assembly_summary.txt | cut -f1,2 -d" " | sort | uniq > allBactSpeciesList.txt 
+sed -i '1d' allBactSpeciesList.txt 
+
+sed '1d' assembly_summary.txt > assembly_summary.tsv  
+
+## how can we use this to get ~fair representation? this is probably a job for python...
+
+python3
+import pandas as pd
+import os
+speciesList=pd.read_csv('allBactSpeciesList.txt')
+assembly_summary=pd.read_csv('assembly_summary.tsv', sep='\t')
+
+assembly_summary.columns
+
+assembly_summary.head()
+
+       
+assembly_summary[['taxid','isolate', 'species_taxid', 'organism_name']].iloc[1:40,:]
+
+
+## looks like the best bet is to use the species_taxid column:
+      
+assembly_summary['organism_name'].drop_duplicates().shape
+
+## so this should give us a list of the first instance of 
+## each unique organism name:
+
+firstInstances = ~assembly_summary['organism_name'].duplicated(keep='first')
+
+
+assembly_summary[ firstInstances ]['organism_name']
+
+## for the moment, let's say we want one genome from each 
+## so the new download list should be:
+
+assembly_summary[ firstInstances ]['ftp_path'].to_csv('allSppDownloadlist.csv', index=False, header=False )
+
+## out of python, let's reuse our code from above to edit the ftp paths:
+
+cd /vol/piceaNanopore/dan/bactGenomes
+cut -d"/" -f 10 allSppDownloadlist.csv > genNames.txt
+sed -i 's/.*/&_genomic.fna.gz/' genNames.txt
+paste allSppDownloadlist.csv genNames.txt -d"/" > files2download.txt
+
+## try a new download, which will surely run all weekend:
+cd /vol/piceaNanopore/dan/bactGenomes/
+getFiles=/vol/piceaNanopore/dan/bactGenomes/files2download.txt
+putFiles=/vol/piceaNanopore/dan/bactGenomes/refSeq/
+nohup wget -i $getFiles -P $putFiles &> downloadRefSeq.log &
+
+
+## repeat all the above with fungi:
+
+cd /vol/piceaNanopore/dan/fungalGenomes
+
+wget ftp://ftp.ncbi.nlm.nih.gov/genomes/README_assembly_summary.txt
 
 wget ftp://ftp.ncbi.nih.gov/genomes/genbank/fungi/assembly_summary.txt
 
-sed '1,2d' assembly_summary.txt | cut  -f 20  > ncbiFungalRefGenomes.txt
-head ncbiFungalRefGenomes.txt
-cut -d"/" -f 10  ncbiFungalRefGenomes.txt > fungalGenNames.txt
-## add the file ending
-sed -i 's/.*/&_genomic.fna.gz/' fungalGenNames.txt
-paste ncbiFungalRefGenomes.txt fungalGenNames.txt -d"/" > fungalfiles2download.txt
+cut -f8 assembly_summary.txt | cut -f1,2 -d" " | sort | uniq | wc -l ## ~4300 fungal species
 
-wc -l fungalfiles2download.txt
+sed '1d' assembly_summary.txt > assembly_summary.tsv  
 
-nohup wget  -i fungalfiles2download.txt &> downloadFungalRefSeq.log &
+sed '1d' assembly_summary.txt > assembly_summary.tsv  
+
+## back into python
+
+python3
+import pandas as pd
+import os
+
+#assembly_summary=pd.read_csv('assembly_summary.tsv', sep='\t')
+## error parsing line 10465. Back out to shell
+sed -n '10465p' assembly_summary.tsv ## ah, this record has errors
+## we don't really need any information after the ftp address, anyway:
+cut -f1-20 assembly_summary.tsv > assembly_summary_cleaned.tsv 
+
+## back in python:
+assembly_summary=pd.read_csv('assembly_summary_cleaned.tsv', sep='\t')
+
+assembly_summary['organism_name'].drop_duplicates().shape ## almost 600 genomes...
+
+firstInstances = ~assembly_summary['organism_name'].duplicated(keep='first')
+assembly_summary[ firstInstances ]['ftp_path'].to_csv('allSppDownloadlist.csv', index=False, header=False )
+
+## out of python
+cd /vol/piceaNanopore/dan/fungalGenomes
+cut -d"/" -f 10 allSppDownloadlist.csv > genNames.txt
+sed -i 's/.*/&_genomic.fna.gz/' genNames.txt
+paste allSppDownloadlist.csv genNames.txt -d"/" > files2download.txt
+
+## try a new download, which will surely run all weekend:
+cd /vol/piceaNanopore/dan/fungalGenomes/
+
+getFiles=/vol/piceaNanopore/dan/fungalGenomes/files2download.txt
+putFiles=/vol/piceaNanopore/dan/fungalGenomes/refSeq/
+nohup wget -i $getFiles -P $putFiles &> downloadRefSeq.log &
+
+## now, we need to make a blast database 
+
 
 ### let that run for a while...
-
 
 ## let's a database of 2000 fungal genomes and 10,000 bacterial genomes
 
 conda create -n blast -c bioconda blast
 
+conda activate blast
+
+## bacteria
 cd /vol/piceaNanopore/dan/bactGenomes/refSeq 
 
 nohup gunzip * &
@@ -2604,21 +2704,77 @@ nohup makeblastdb -in bactRefGenome.fa -parse_seqids -dbtype nucl &
 ## raw reads blasted against bacteria:
 ## we are interested in blasting the raw reads, and the assemblies we have.
 
-blastn -db $localDB -query $soxB -out $genome"_"$query"_Blastn.csv" -outfmt 10
+rawReadsAdapt=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fastq
+
+seqtk seq -A $rawReadsAdapt > allChrisHostDepletionTrial_noShorts.fasta
+
+rawReadsAdaptFa=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fasta
+
+nohup blastn -db bactRefGenome.fa \
+  -query $rawReadsAdaptFa \
+  -num_threads 12 \
+  -num_alignments 1 \
+  -out depletionTrial_bacterial_blastn.csv \
+  -outfmt 10 &
 sed -i '1i qseqid,sseqid,pident,length,mismatch,gapopen,qstart,qend,sstart,send,evalue,bitscore' $genome"_"$query"_Blastn.csv"
 
+## not sure how to get multiple output formats without running multiple alignments? 
+## seems really inefficient but rerun with 
+nohup blastn -db bactRefGenome.fa \
+  -query $rawReadsAdaptFa \
+  -num_threads 12 \
+  -num_alignments 2 \
+  -out depletionTrial_bacterial_blastn.txt &
 
-rawReadsAdapt=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fastq
+cd /vol/piceaNanopore/dan/bactGenomes/refSeq 
+
+less bactRefGenome.fa
+
+grep -c "Query=" depletionTrial_bacterial_blastn.txt
+
+grep -c "No hits found" depletionTrial_bacterial_blastn.txt
+
+wc -l depletionTrial_bacterial_blastn.csv
+
+grep -c "^>" $rawReadsAdaptFa
+
+## looks like it is working...
+
+
 
 ## fungal genomes
 
-cd /vol/piceaNanopore/dan/fungalGenomes
+cd /vol/piceaNanopore/dan/fungalGenomes/refSeq
+
 
 nohup gunzip * &
-
 nohup cat * > fungRefGenome.fa &
 
 nohup makeblastdb -in fungRefGenome.fa -parse_seqids -dbtype nucl &
 
+## blast them!
 
+## not run
+rawReadsAdaptFa=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fasta
+
+nohup blastn -db fungRefGenome.fa -query $rawReadsAdaptFa -num_threads 12 -out depletionTrial_fungal_blastn.csv -outfmt 10 &
+
+nohup blastn -db fungRefGenome.fa \
+  -query $rawReadsAdaptFa \
+  -num_threads 12 \
+  -num_alignments 1 \
+  -out depletionTrial_fungal_blastn.csv \
+  -outfmt 10 &
+
+sed -i '1i qseqid,sseqid,pident,length,mismatch,gapopen,qstart,qend,sstart,send,evalue,bitscore' $genome"_"$query"_Blastn.csv"
+
+nohup blastn -db fungRefGenome.fa \
+  -query $rawReadsAdaptFa \
+  -num_threads 12 \
+  -num_alignments 2 \
+  -out depletionTrial_fungal_blastn.txt &
+
+
+## then I think we need to combine the reads that blasted to either fungal or bacterial genomes 
+## with high confidence, and sort out the unique reads from this. 
 
