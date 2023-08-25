@@ -658,6 +658,11 @@ cd /media/vol1/daniel/hostDepletion/ourData
 genome=/media/vol1/daniel/spruce/Pabies_repeatsCompressed_mt_ch.fa
 minimap2 -d Pabies_repeatsCompressed_mt_ch.mmi $genome
 
+## copy of genome for lara:
+
+sudo ln -s /media/vol1/daniel/spruce/Pabies_repeatsCompressed_mt_ch.fa \
+  /media/vol2/lara/PabiesGenome_repeatsCompressed_mt_ch.fa
+
 ## we'll play with chris's bulk fast5 file that he created:
 
 ls -lh /media/vol2/chris/Pabies_tests/bulk_fast5_files/MinION-PC_20230621_1522_FAU29445_MN40608_sequencing_run_bigger_e77dd4cd_5395a225.fast5
@@ -666,6 +671,13 @@ ls -lh /media/vol2/chris/Pabies_tests/bulk_fast5_files/MinION-PC_20230621_1522_F
 
 cp /media/vol2/chris/Pabies_tests/bulk_fast5_files/MinION-PC_20230621_1522_FAU29445_MN40608_sequencing_run_bigger_e77dd4cd_5395a225.fast5 \
 /media/vol1/daniel/hostDepletion/ourData/picea.fast5
+
+## and make a link for lara:
+
+cd /media/vol2/chris/Pabies_tests/bulk_fast5_files/
+
+sudo ln -s /media/vol2/chris/Pabies_tests/bulk_fast5_files/MinION-PC_20230621_1522_FAU29445_MN40608_sequencing_run_bigger_e77dd4cd_5395a225.fast5 \
+  /media/vol2/lara/spruceSimulation.fast5
 
 chmod 444 picea.fast5
 
@@ -2579,10 +2591,34 @@ nohup wget  -i fungalfiles2download.txt &> downloadFungalRefSeq.log &
 
 ## let's a database of 2000 fungal genomes and 10,000 bacterial genomes
 
+conda create -n blast -c bioconda blast
+
 cd /vol/piceaNanopore/dan/bactGenomes/refSeq 
+
 nohup gunzip * &
 
+nohup cat * > bactRefGenome.fa &
+
+nohup makeblastdb -in bactRefGenome.fa -parse_seqids -dbtype nucl &
+
+## raw reads blasted against bacteria:
+## we are interested in blasting the raw reads, and the assemblies we have.
+
+blastn -db $localDB -query $soxB -out $genome"_"$query"_Blastn.csv" -outfmt 10
+sed -i '1i qseqid,sseqid,pident,length,mismatch,gapopen,qstart,qend,sstart,send,evalue,bitscore' $genome"_"$query"_Blastn.csv"
+
+
+rawReadsAdapt=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fastq
+
+## fungal genomes
+
 cd /vol/piceaNanopore/dan/fungalGenomes
+
 nohup gunzip * &
+
+nohup cat * > fungRefGenome.fa &
+
+nohup makeblastdb -in fungRefGenome.fa -parse_seqids -dbtype nucl &
+
 
 

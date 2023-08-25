@@ -1,0 +1,37 @@
+## to start a new simulation, we need to update guppy on the 
+## type of flow cell that was used to make the simulation data
+
+## this means that the guppy server needs to be pointed to a 
+## new config file. The new guppy config file to use is: 
+
+"dna_r10.4.1_e8.2_400bps_fast.cfg"
+
+## then the guppy server daemon will need to be restarted. 
+## there is an example of how/where to do this in my scripts 
+## (kind of a mess), or log into community.nanoporetech.com 
+## and look at my comment at the end of this discussion:
+
+https://community.nanoporetech.com/posts/guppy-config-files-used-by#comment_49928
+
+## we also need to change the sequencing toml file (not the 
+## just the readfish toml!). Do you remember where these are?
+## since it is just a simulation, it is probably okay to 
+## use the same file as before ("sequencing_MIN106_DNA.toml"). 
+
+## in this file, change the "simulation" line to match your 
+## new bulk fast5 file. Try to find and change the following 
+## line:
+
+## simulation= <name of your bulk-fast5 file, full (absolute) path)>
+
+## you'll also need to make a minimap2 index of the new genome, 
+## and point your readfish toml file to this mmi file, in the 
+## same way as we used the human genome mmi file in the online
+## examples. 
+
+## plus there are the usual debugging steps we've already covered
+## and probably several things I've forgotten...
+
+## if everything gets up and running, try different adaptive 
+## sequencing settings (accept all reads that align to host, 
+## reject all reads that align to host, etc). 
