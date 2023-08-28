@@ -2728,7 +2728,6 @@ grep -c "^>" allbactGenomes.fa > howmanybact.txt &
 
 cat /vol/piceaNanopore/dan/bactGenomes/howmanybact.txt
 
-
 ## make fungal combined file
 cd /vol/piceaNanopore/dan/fungalGenomes
 nohup find /mnt/ephem/fungalGenomes/refSeq -type f -exec cat {} + > allFungalGenomes.fa &
@@ -2744,77 +2743,76 @@ cat /vol/piceaNanopore/dan/fungalGenomes/howmanyfungi.txt
 conda activate blast
 
 cd /vol/piceaNanopore/dan/bactGenomes
+
 nohup makeblastdb -in allbactGenomes.fa -parse_seqids -dbtype nucl &
 
 ## fungal blastdb
 
 cd /vol/piceaNanopore/dan/fungalGenomes
-
 nohup makeblastdb -in allFungalGenomes.fa -parse_seqids -dbtype nucl &
 
-### stop here
 
 ## raw reads blasted against bacteria:
 ## we are interested in blasting the raw reads, and the assemblies we have.
 
-rawReadsAdapt=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fastq
+cd /vol/piceaNanopore/dan/bactGenomes
 
-seqtk seq -A $rawReadsAdapt > allChrisHostDepletionTrial_noShorts.fasta
-
-rawReadsAdaptFa=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fasta
-
-nohup blastn -db bactRefGenome.fa \
-  -query $rawReadsAdaptFa \
-  -num_threads 12 \
+rawReadsAdapt=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fasta
+nohup blastn -db allbactGenomes.fa \
+  -query $rawReadsAdapt \
+  -num_threads 10 \
   -num_alignments 1 \
   -out depletionTrial_bacterial_blastn.csv \
   -outfmt 10 &
+
+
 sed -i '1i qseqid,sseqid,pident,length,mismatch,gapopen,qstart,qend,sstart,send,evalue,bitscore' $genome"_"$query"_Blastn.csv"
 
 ## not sure how to get multiple output formats without running multiple alignments? 
 ## seems really inefficient but rerun with 
-nohup blastn -db bactRefGenome.fa \
-  -query $rawReadsAdaptFa \
-  -num_threads 12 \
-  -num_alignments 2 \
+
+nohup blastn -db allbactGenomes.fa \
+  -query $rawReadsAdapt \
+  -num_threads 10 \
+  -num_alignments 3 \
   -out depletionTrial_bacterial_blastn.txt &
+
+## not run
+
+head /vol/piceaNanopore/dan/bactGenomes/depletionTrial_bacterial_blastn.csv
+
+ls -lh /vol/piceaNanopore/dan/bactGenomes/depletionTrial_bacterial_blastn.csv
 
 cd /vol/piceaNanopore/dan/bactGenomes/refSeq 
 
-less bactRefGenome.fa
+less allbactGenomes.fa
 
 grep -c "Query=" depletionTrial_bacterial_blastn.txt
 
 grep -c "No hits found" depletionTrial_bacterial_blastn.txt
 
+grep -c "Sequences producing significant alignments:" depletionTrial_bacterial_blastn.txt
+
+less depletionTrial_bacterial_blastn.txt
+
 wc -l depletionTrial_bacterial_blastn.csv
 
-grep -c "^>" $rawReadsAdaptFa
+grep -c "^>" $rawReadsAdapt
 
 ## looks like it is working...
 
-
-
 ## fungal genomes
 
-cd /vol/piceaNanopore/dan/fungalGenomes/refSeq
+## blast them too!
 
+## we only have enough cores to start one:
 
-nohup gunzip * &
-nohup cat * > fungRefGenome.fa &
+cd /vol/piceaNanopore/dan/fungalGenomes
+rawReadsAdapt=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fasta
 
-nohup makeblastdb -in fungRefGenome.fa -parse_seqids -dbtype nucl &
-
-## blast them!
-
-## not run
-rawReadsAdaptFa=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fasta
-
-nohup blastn -db fungRefGenome.fa -query $rawReadsAdaptFa -num_threads 12 -out depletionTrial_fungal_blastn.csv -outfmt 10 &
-
-nohup blastn -db fungRefGenome.fa \
-  -query $rawReadsAdaptFa \
-  -num_threads 12 \
+nohup blastn -db allFungalGenomes.fa \
+  -query $rawReadsAdapt \
+  -num_threads 5 \
   -num_alignments 1 \
   -out depletionTrial_fungal_blastn.csv \
   -outfmt 10 &
@@ -2823,10 +2821,9 @@ sed -i '1i qseqid,sseqid,pident,length,mismatch,gapopen,qstart,qend,sstart,send,
 
 nohup blastn -db fungRefGenome.fa \
   -query $rawReadsAdaptFa \
-  -num_threads 12 \
-  -num_alignments 2 \
+  -num_threads 10 \
+  -num_alignments 3 \
   -out depletionTrial_fungal_blastn.txt &
-
 
 ## then I think we need to combine the reads that blasted to either fungal or bacterial genomes 
 ## with high confidence, and sort out the unique reads from this. 
