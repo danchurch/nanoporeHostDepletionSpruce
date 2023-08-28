@@ -2686,20 +2686,73 @@ nohup wget -i $getFiles -P $putFiles &> downloadRefSeq.log &
 
 ### let that run for a while...
 
-## let's a database of 2000 fungal genomes and 10,000 bacterial genomes
+## let's work in the large ephemeral drive that denbi gave us:
+
+## let's a database of our fungal genomes and bacterial genomes
+
+#mv /vol/piceaNanopore/dan/bactGenomes /mnt/ephem/
+#mv /vol/piceaNanopore/dan/fungalGenomes /mnt/ephem/
+
+#mv /mnt/ephem/fungalGenomes /vol/piceaNanopore/dan/ 
+#mv /vol/piceaNanopore/dan/fungalGenomes/refSeq /mnt/ephem/fungalGenomes
+
+du /vol/piceaNanopore/dan/fungalGenomes/refSeq  -h
+
+
+cd /mnt/ephem/bactGenomes/refSeq
+
+gunzip -r .
+
+cd /mnt/ephem/fungalGenomes/refSeq
+
+gunzip -r . &
+
 
 conda create -n blast -c bioconda blast
 
 conda activate blast
 
-## bacteria
-cd /vol/piceaNanopore/dan/bactGenomes/refSeq 
+cd /mnt/ephem/bactGenomes/refSeq 
 
-nohup gunzip * &
+nohup cat * > bactRefGenome.fa & ## too many files
 
-nohup cat * > bactRefGenome.fa &
+## try this:
 
-nohup makeblastdb -in bactRefGenome.fa -parse_seqids -dbtype nucl &
+ls /mnt/ephem/bactGenomes/refSeq 
+
+## make bact combined file
+cd /vol/piceaNanopore/dan/bactGenomes
+
+nohup find /mnt/ephem/bactGenomes/refSeq -type f -exec cat {} + > allbactGenomes.fa &
+grep -c "^>" allbactGenomes.fa > howmanybact.txt &
+
+cat /vol/piceaNanopore/dan/bactGenomes/howmanybact.txt
+
+
+## make fungal combined file
+cd /vol/piceaNanopore/dan/fungalGenomes
+nohup find /mnt/ephem/fungalGenomes/refSeq -type f -exec cat {} + > allFungalGenomes.fa &
+
+## should be 5977 genomes in this file:
+grep -c "^>" allFungalGenomes.fa > howmanyfungi.txt &
+
+cat /vol/piceaNanopore/dan/fungalGenomes/howmanyfungi.txt
+
+## make databases
+
+## bacterial blastdb
+conda activate blast
+
+cd /vol/piceaNanopore/dan/bactGenomes
+nohup makeblastdb -in allbactGenomes.fa -parse_seqids -dbtype nucl &
+
+## fungal blastdb
+
+cd /vol/piceaNanopore/dan/fungalGenomes
+
+nohup makeblastdb -in allFungalGenomes.fa -parse_seqids -dbtype nucl &
+
+### stop here
 
 ## raw reads blasted against bacteria:
 ## we are interested in blasting the raw reads, and the assemblies we have.
