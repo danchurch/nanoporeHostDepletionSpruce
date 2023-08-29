@@ -854,6 +854,8 @@ readfish targets --device MN40608 \
               --toml spruce_chloroplastEnrichment.toml \
               --log-file chloro_test.log
 
+less chloro_test.log
+
 ## and its running. Let that go for a while...
 
 ## the report is probably really long:
@@ -1137,6 +1139,8 @@ cd /var/lib/minknow/data/Pabies_bulk_fast5/
 ## downloading some kind of prokaryote database from NCBI
 
 ## data is here:
+
+cd /var/lib/minknow/data/spruceZoop5/no_sample/20230630_1147_MN40608_spruceZoop5_f5ee253a/fastq_pass/
 
 cp /var/lib/minknow/data/spruceZoop5/no_sample/20230630_1147_MN40608_spruceZoop5_f5ee253a/fastq_pass/*fastq.gz ./
 
@@ -2777,27 +2781,50 @@ nohup blastn -db allbactGenomes.fa \
   -num_alignments 3 \
   -out depletionTrial_bacterial_blastn.txt &
 
-## not run
 
 head /vol/piceaNanopore/dan/bactGenomes/depletionTrial_bacterial_blastn.csv
 
 ls -lh /vol/piceaNanopore/dan/bactGenomes/depletionTrial_bacterial_blastn.csv
 
-cd /vol/piceaNanopore/dan/bactGenomes/refSeq 
+less /vol/piceaNanopore/dan/bactGenomes/depletionTrial_bacterial_blastn.csv
+
+wc -l /vol/piceaNanopore/dan/bactGenomes/depletionTrial_bacterial_blastn.csv
+
+cd /vol/piceaNanopore/dan/bactGenomes
 
 less allbactGenomes.fa
 
-grep -c "Query=" depletionTrial_bacterial_blastn.txt
+bactTxt=/vol/piceaNanopore/dan/bactGenomes/depletionTrial_bacterial_blastn.txt
 
-grep -c "No hits found" depletionTrial_bacterial_blastn.txt
+ls -lh  $bactTxt
 
-grep -c "Sequences producing significant alignments:" depletionTrial_bacterial_blastn.txt
+grep -c "Query=" $bactTxt
 
-less depletionTrial_bacterial_blastn.txt
+grep -c "No hits found" $bactTxt
 
-wc -l depletionTrial_bacterial_blastn.csv
+grep -c "Sequences producing significant alignments:" $bactTxt
+
+less $bactTxt
+
+bactCSV=/vol/piceaNanopore/dan/bactGenomes/depletionTrial_bacterial_blastn.csv
+
+wc -l $bactCSV
+
+ls -lh  $bactCSV
 
 grep -c "^>" $rawReadsAdapt
+
+125139/319718
+
+116775/298013 
+
+113619 / 290154
+
+111364/284570
+
+96783/245790
+
+89776/227539 ## seems to hover around 39% 
 
 ## looks like it is working...
 
@@ -2808,6 +2835,7 @@ grep -c "^>" $rawReadsAdapt
 ## we only have enough cores to start one:
 
 cd /vol/piceaNanopore/dan/fungalGenomes
+
 rawReadsAdapt=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fasta
 
 nohup blastn -db allFungalGenomes.fa \
@@ -2825,6 +2853,23 @@ nohup blastn -db fungRefGenome.fa \
   -num_alignments 3 \
   -out depletionTrial_fungal_blastn.txt &
 
-## then I think we need to combine the reads that blasted to either fungal or bacterial genomes 
+## check these:
+
+## there are some repeats. For instance
+
+grep -A 1 "5d61c9f3-3592-4123-80aa-b87bad800aac" $rawReadsAdapt
+
+grep "5d61c9f3-3592-4123-80aa-b87bad800aac" /vol/piceaNanopore/dan/bactGenomes/depletionTrial_bacterial_blastn.csv
+
+grep -A 40 "5d61c9f3-3592-4123-80aa-b87bad800aac" /vol/piceaNanopore/dan/bactGenomes/depletionTrial_bacterial_blastn.txt
+
+grep "5d61c9f3-3592-4123-80aa-b87bad800aac" /vol/piceaNanopore/dan/fungalGenomes/depletionTrial_fungal_blastn.csv
+
+## so I think we need to combine the reads that blasted to either fungal or bacterial genomes 
 ## with high confidence, and sort out the unique reads from this. 
+
+## for the moment, let's not do much curation on this, just get an estimate of reads that are likely 
+## microbial in origin
+
+## compare to our small control, when Chris 
 
