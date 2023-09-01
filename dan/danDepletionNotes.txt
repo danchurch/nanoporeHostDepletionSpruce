@@ -2627,9 +2627,11 @@ assembly_summary[ firstInstances ]['ftp_path'].to_csv('allSppDownloadlist.csv', 
 ## out of python, let's reuse our code from above to edit the ftp paths:
 
 cd /vol/piceaNanopore/dan/bactGenomes
+
 cut -d"/" -f 10 allSppDownloadlist.csv > genNames.txt
 sed -i 's/.*/&_genomic.fna.gz/' genNames.txt
 paste allSppDownloadlist.csv genNames.txt -d"/" > files2download.txt
+
 
 ## try a new download, which will surely run all weekend:
 cd /vol/piceaNanopore/dan/bactGenomes/
@@ -2762,6 +2764,7 @@ nohup makeblastdb -in allFungalGenomes.fa -parse_seqids -dbtype nucl &
 cd /vol/piceaNanopore/dan/bactGenomes
 
 rawReadsAdapt=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fasta
+
 nohup blastn -db allbactGenomes.fa \
   -query $rawReadsAdapt \
   -num_threads 10 \
@@ -2802,6 +2805,14 @@ grep -c "Query=" $bactTxt
 
 grep -c "No hits found" $bactTxt
 
+grep -c "Sequences producing significant alignments:" $bactTxt && grep -c "Query=" $bactTxt 
+
+1244675/1251333
+
+1251333 - 1244675
+
+#1251333
+
 grep -c "Sequences producing significant alignments:" $bactTxt
 
 less $bactTxt
@@ -2812,19 +2823,43 @@ wc -l $bactCSV
 
 ls -lh  $bactCSV
 
-grep -c "^>" $rawReadsAdapt
+grep -c "^>" $rawReadsAdapt & #1251333
 
-125139/319718
+477951/1249155 ## .382
 
-116775/298013 
+465375/1217566 ## .382
 
-113619 / 290154
+461379/1207454 ## .382
 
-111364/284570
+446859/1170058 ## .382
 
-96783/245790
+390429/1023739 ## .381
 
-89776/227539 ## seems to hover around 39% 
+362264/945479 ## .383
+
+352882/919530 ## .383
+
+330019/856872 ## .385
+
+244213/629211 ## .388
+
+229197/589926 ## .388
+
+206271/529635 ## .389
+
+125139/319718 ## .391
+
+116775/298013  ## .391
+
+113619 / 290154 ## .391
+
+111364/284570 ## .391
+
+96783/245790 ## .394
+
+89776/227539 ## .394 
+
+## seems to hover around 38-39% 
 
 ## looks like it is working...
 
@@ -2847,15 +2882,21 @@ nohup blastn -db allFungalGenomes.fa \
 
 sed -i '1i qseqid,sseqid,pident,length,mismatch,gapopen,qstart,qend,sstart,send,evalue,bitscore' $genome"_"$query"_Blastn.csv"
 
-nohup blastn -db fungRefGenome.fa \
-  -query $rawReadsAdaptFa \
-  -num_threads 10 \
-  -num_alignments 3 \
-  -out depletionTrial_fungal_blastn.txt &
+## not run
+#nohup blastn -db fungRefGenome.fa \
+#  -query $rawReadsAdaptFa \
+#  -num_threads 10 \
+#  -num_alignments 3 \
+#  -out depletionTrial_fungal_blastn.txt &
 
 ## check these:
 
+fungalCSV=/vol/piceaNanopore/dan/fungalGenomes/depletionTrial_fungal_blastn.csv
+wc -l $fungalCSV
+
 ## there are some repeats. For instance
+
+rawReadsAdapt=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fasta
 
 grep -A 1 "5d61c9f3-3592-4123-80aa-b87bad800aac" $rawReadsAdapt
 
@@ -2866,10 +2907,72 @@ grep -A 40 "5d61c9f3-3592-4123-80aa-b87bad800aac" /vol/piceaNanopore/dan/bactGen
 grep "5d61c9f3-3592-4123-80aa-b87bad800aac" /vol/piceaNanopore/dan/fungalGenomes/depletionTrial_fungal_blastn.csv
 
 ## so I think we need to combine the reads that blasted to either fungal or bacterial genomes 
-## with high confidence, and sort out the unique reads from this. 
+## and host genomes. So we need a third blast search to host, which should go much more easily.
+## comparisons among the three should follow, and every read that blasts most confidently to 
+## a microbe should be retained. 
 
 ## for the moment, let's not do much curation on this, just get an estimate of reads that are likely 
 ## microbial in origin
 
 ## compare to our small control, when Chris 
 
+## this should be simple, just repeat with the blastn process with 
+## our small run that chris created for simulations.
+
+## where is this? 
+
+## on nanocomp
+cd /var/lib/minknow/data/Pabies_bulk_fast5/bigger/20230621_1517_MN40608_FAU29445_e77dd4cd/fastq_pass/
+
+## on denbiComp
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt
+seqtk seq -A allpabies_noAdaptSeq.fastq > allpabies_noAdaptSeq.fasta
+
+noAdaptSeq="/vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/allpabies_noAdaptSeq.fasta"
+
+ls -lh $noAdaptSeq
+
+grep -c "^>" $noAdaptSeq ## 24584 reads
+
+## should be short:
+
+## non-adaptive bacterial blast:
+
+conda activate blast
+
+cd /vol/piceaNanopore/dan/bactGenomes
+
+noAdaptSeq="/vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/allpabies_noAdaptSeq.fasta"
+
+## csv:
+nohup blastn -db allbactGenomes.fa \
+  -query $noAdaptSeq \
+  -num_threads 10 \
+  -num_alignments 1 \
+  -out noAdaptiveSamp_bacterial_blastn.csv \
+  -outfmt 10 &
+
+sed -i '1i qseqid,sseqid,pident,length,mismatch,gapopen,qstart,qend,sstart,send,evalue,bitscore' $genome"_"$query"_Blastn.csv"
+
+## long text:
+
+nohup blastn -db allbactGenomes.fa \
+  -query $noAdaptSeq \
+  -num_threads 10 \
+  -num_alignments 3 \
+  -out noAdaptiveSamp_bacterial_blastn.txt &
+
+grep -c "Sequences producing significant alignments:" noAdaptiveSamp_bacterial_blastn.txt && grep -c "Query=" noAdaptiveSamp_bacterial_blastn.txt 
+
+7863/24584
+
+## non-adaptive fungal blast, csv:
+nohup blastn -db allFungalGenomes.fa \
+  -query $noAdaptSeq \
+  -num_threads 5 \
+  -num_alignments 1 \
+  -out noAdaptiveSamp_fungal_blastn.csv \
+  -outfmt 10 &
+
+## 
