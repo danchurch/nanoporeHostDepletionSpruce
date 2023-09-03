@@ -2807,11 +2807,6 @@ grep -c "No hits found" $bactTxt
 
 grep -c "Sequences producing significant alignments:" $bactTxt && grep -c "Query=" $bactTxt 
 
-1244675/1251333
-
-1251333 - 1244675
-
-#1251333
 
 grep -c "Sequences producing significant alignments:" $bactTxt
 
@@ -2823,41 +2818,12 @@ wc -l $bactCSV
 
 ls -lh  $bactCSV
 
-grep -c "^>" $rawReadsAdapt & #1251333
+rawReadsAdapt=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fasta
+
+grep -c "^>" $rawReadsAdapt & #1251333 total reads in the adapt set
 
 477951/1249155 ## .382
 
-465375/1217566 ## .382
-
-461379/1207454 ## .382
-
-446859/1170058 ## .382
-
-390429/1023739 ## .381
-
-362264/945479 ## .383
-
-352882/919530 ## .383
-
-330019/856872 ## .385
-
-244213/629211 ## .388
-
-229197/589926 ## .388
-
-206271/529635 ## .389
-
-125139/319718 ## .391
-
-116775/298013  ## .391
-
-113619 / 290154 ## .391
-
-111364/284570 ## .391
-
-96783/245790 ## .394
-
-89776/227539 ## .394 
 
 ## seems to hover around 38-39% 
 
@@ -2894,6 +2860,7 @@ sed -i '1i qseqid,sseqid,pident,length,mismatch,gapopen,qstart,qend,sstart,send,
 fungalCSV=/vol/piceaNanopore/dan/fungalGenomes/depletionTrial_fungal_blastn.csv
 wc -l $fungalCSV
 
+
 ## there are some repeats. For instance
 
 rawReadsAdapt=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fasta
@@ -2909,12 +2876,46 @@ grep "5d61c9f3-3592-4123-80aa-b87bad800aac" /vol/piceaNanopore/dan/fungalGenomes
 ## so I think we need to combine the reads that blasted to either fungal or bacterial genomes 
 ## and host genomes. So we need a third blast search to host, which should go much more easily.
 ## comparisons among the three should follow, and every read that blasts most confidently to 
-## a microbe should be retained. 
+## a microbe should be retained. For the moment, let's not do much curation on this, just get 
+## an estimate of reads that are likely microbial in origin
 
-## for the moment, let's not do much curation on this, just get an estimate of reads that are likely 
-## microbial in origin
+##### adapt/Spruce check ####
 
-## compare to our small control, when Chris 
+## also need to get a catalogue of which reads aligned well to the host
+## where is our spruce genome?...
+
+## make database
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/spruceRefGenome/
+nohup makeblastdb -in Pabies-haploid_withOrganelles.fa -parse_seqids -dbtype nucl &
+
+## use it:
+
+## put data in compare directory:
+
+ 
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/hostBlastMatches
+
+fullSpruceGenome=/vol/piceaNanopore/dan/chrisHostDepletionTrial/spruceRefGenome/Pabies-haploid_withOrganelles.fa
+rawReadsAdapt=/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fasta
+
+## csv of adapt/spruce search
+nohup blastn -db $fullSpruceGenome \
+  -query $rawReadsAdapt \
+  -num_threads 10 \
+  -num_alignments 1 \
+  -out depletionTrial_Spruce_blastn.csv \
+  -outfmt 10 &
+
+## not run:  
+## txt file of match details
+nohup blastn -db $fullSpruceGenome \
+  -query $rawReadsAdapt \
+  -num_threads 10 \
+  -num_alignments 2 \
+  -out depletionTrial_bacterial_blastn.txt &
+
+
+## let's compare to our small control run, which Chris intended for simulations
 
 ## this should be simple, just repeat with the blastn process with 
 ## our small run that chris created for simulations.
@@ -2943,7 +2944,7 @@ conda activate blast
 
 cd /vol/piceaNanopore/dan/bactGenomes
 
-noAdaptSeq="/vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/allpabies_noAdaptSeq.fasta"
+noAdaptSeq="/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allpabies_noAdaptSeq.fasta"
 
 ## csv:
 nohup blastn -db allbactGenomes.fa \
@@ -2956,7 +2957,6 @@ nohup blastn -db allbactGenomes.fa \
 sed -i '1i qseqid,sseqid,pident,length,mismatch,gapopen,qstart,qend,sstart,send,evalue,bitscore' $genome"_"$query"_Blastn.csv"
 
 ## long text:
-
 nohup blastn -db allbactGenomes.fa \
   -query $noAdaptSeq \
   -num_threads 10 \
@@ -2965,14 +2965,145 @@ nohup blastn -db allbactGenomes.fa \
 
 grep -c "Sequences producing significant alignments:" noAdaptiveSamp_bacterial_blastn.txt && grep -c "Query=" noAdaptiveSamp_bacterial_blastn.txt 
 
-7863/24584
+7863/24584 ## .32 possible bacterial matches
+
+## not run
 
 ## non-adaptive fungal blast, csv:
+
+cd /vol/piceaNanopore/dan/fungalGenomes
+noAdaptSeq="/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allpabies_noAdaptSeq.fasta"
 nohup blastn -db allFungalGenomes.fa \
   -query $noAdaptSeq \
-  -num_threads 5 \
+  -num_threads 10 \
   -num_alignments 1 \
   -out noAdaptiveSamp_fungal_blastn.csv \
   -outfmt 10 &
 
-## 
+
+## non-adaptive/host-genome blast, csv:
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/hostBlastMatches
+
+noAdaptSeq="/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allpabies_noAdaptSeq.fasta"
+fullSpruceGenome="/vol/piceaNanopore/dan/chrisHostDepletionTrial/spruceRefGenome/Pabies-haploid_withOrganelles.fa"
+
+
+nohup blastn -db $fullSpruceGenome \
+  -query $noAdaptSeq \
+  -num_threads 10 \
+  -num_alignments 1 \
+  -out noAdaptiveSamp_Spruce_blastn.csv \
+  -outfmt 10 &
+
+
+adapt2spruce=/vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/hostBlastMatches/depletionTrial_Spruce_blastn.csv
+
+noAdapt2spruce=/vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt/hostBlastMatches/noAdaptiveSamp_Spruce_blastn.csv
+
+
+wc -l $noAdapt2spruce ## 29972 or  29,972, out of? 
+
+grep -c "^>" $noAdaptSeq ## 24584. Why does this keep returning more matches than queries? We only requested 1 alignment?
+
+29972/24584
+
+cut $noAdapt2spruce -d"," -f1 | sort | uniq | wc -l ## 23581
+
+23581/24584 ## 96% of noAdapt reads find some sort of match to spruce
+
+less $adapt2spruce
+
+wc -l $adapt2spruce ## 1615413, this is more than raw reads?
+
+cut $adapt2spruce -d"," -f1 | sort | uniq | wc -l ## 1188134
+## 1,188,134. 
+
+1188134/1251333 ## 0.949 of adapt reads have some sort of match to host. Pretty much the same. WTF
+
+
+## fungi:
+noAdapt2fungi=/vol/piceaNanopore/dan/fungalGenomes/noAdaptiveSamp_fungal_blastn.csv
+adapt2fungi=/vol/piceaNanopore/dan/fungalGenomes/depletionTrial_fungal_blastn.csv
+
+wc -l $noAdapt2fungi  ## 8492
+
+cut $noAdapt2fungi -d"," -f1 | sort | uniq | wc -l ## 7501
+
+7501/24584 ## 30% of noAdapt reads have a fungal match
+
+wc -l $adapt2fungi ## 505789 or 505,789 reads
+
+cut $adapt2fungi -d"," -f1 | sort | uniq | wc -l ## 386103
+
+386103/1251333 ## 30% reads, same as noAdapt.
+
+## ugh, really starting to look like using readfish didn't help us at all.
+## but we need to examing the quality of the matches. 
+
+## general strategy
+## we need go through each read, find its best match to host/bacteria/fungi, 
+## then tally the totals
+
+## don't think this will make much of a difference, but let's see. 
+
+## organize a bit, we have six dataframes of interest. 
+
+## fungal, bacterial, host x adapt/noAdapt
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt
+
+## panda time
+
+python3 
+
+import pandas as pd
+import os
+from Bio import SeqIO
+
+os.chdir('/vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt')
+
+head=[ 'qseqid','sseqid','pident','length','mismatch',
+  'gapopen','qstart','qend','sstart','send','evalue','bitscore' ]
+
+
+noAdapt2spruce = pd.read_csv("noAdaptiveSamp_Spruce_blastn.csv", names=head)
+adapt2spruce = pd.read_csv("depletionTrial_Spruce_blastn.csv", names=head)
+noAdapt2bact = pd.read_csv("noAdaptiveSamp_bacterial_blastn.csv", names=head)
+adapt2bact = pd.read_csv("depletionTrial_bacterial_blastn.csv", names=head)
+noAdapt2fung = pd.read_csv("noAdaptiveSamp_fungal_blastn.csv", names=head)
+adapt2fung = pd.read_csv("depletionTrial_fungal_blastn.csv", names=head)
+
+## one question we could ask is, 
+## do average bit scores vary between the adaptive and 
+## non-adaptive runs, in alignment to host?
+## probably not, but to check:
+
+noAdapt2spruce['bitscore'].mean() ## 1200
+adapt2spruce['bitscore'].mean() ## 1385
+
+noAdapt2bact['bitscore'].mean() ## 759
+adapt2bact['bitscore'].mean() ## 881
+
+noAdapt2fung['bitscore'].mean() ## 624
+adapt2fung['bitscore'].mean() ## 694
+
+## in all three, the average bitscore is slightly 
+## higher in the adaptive run. No information there.
+
+## lots of questions...
+## but to start, I think we need the names of the reads:
+
+adaptFasta = "/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fasta"
+aa = []
+for i in SeqIO.parse(adaptFasta, "fasta"):
+    aa.append(i.id)
+
+bb = pd.Series(aa)
+
+## make tallies of uniq reads to each category
+
+## try one read with multiple mappings. get decision procedure.
+
+## apply to all reads.
+
+## eat dinner first.
