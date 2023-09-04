@@ -3057,7 +3057,7 @@ cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt
 python3 
 
 import pandas as pd
-import os
+import os, random
 from Bio import SeqIO
 
 os.chdir('/vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt')
@@ -3094,11 +3094,11 @@ adapt2fung['bitscore'].mean() ## 694
 ## but to start, I think we need the names of the reads:
 
 adaptFasta = "/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fasta"
-aa = []
+allAdaptNamesl = []
 for i in SeqIO.parse(adaptFasta, "fasta"):
-    aa.append(i.id)
+    allAdaptNamesl.append(i.id)
 
-bb = pd.Series(aa)
+allAdaptNamesS = pd.Series(allAdaptNamesl)
 
 ## make tallies of uniq reads to each category
 
@@ -3107,3 +3107,314 @@ bb = pd.Series(aa)
 ## apply to all reads.
 
 ## eat dinner first.
+
+## maybe the best approach is to "normalize" bit score by 
+## length of match, then compare?
+## but if "normalize" by length, we lose information about the 
+## length of the match, and long matches are better...maybe 
+## just take the largest bit map score?
+
+## let's find one read with multiple mappings to examine:
+ 
+adapt2spruce
+adapt2bact
+adapt2fung
+
+adapt2spruce.head()
+adapt2bact.head()
+adapt2fung.head()
+
+
+adapt2bact['qseqid'].head().str.contains('a20b6212-b57d-45ec-8287-c2211f219182')
+
+adapt2spruce.set_index('qseqid', inplace=True)
+adapt2bact.set_index('qseqid', inplace=True)
+adapt2fung.set_index('qseqid', inplace=True)
+
+adapt2spruce.reset_index(inplace=True)
+adapt2bact.reset_index(inplace=True)
+adapt2fung.reset_index(inplace=True)
+
+adapt2bact.loc['a20b6212-b57d-45ec-8287-c2211f219182']
+adapt2fung.loc['a20b6212-b57d-45ec-8287-c2211f219182']
+
+## how do we find shared sequences among these?
+
+adapt2spruce.values
+
+adaptSpruce2bactSet = set(adapt2spruce['qseqid']).intersection(set(adapt2bact['qseqid']))
+adaptSpruce2fungSet = set(adapt2spruce['qseqid']).intersection(set(adapt2fung['qseqid']))
+adaptBact2fungSet = set(adapt2bact['qseqid']).intersection(set(adapt2fung['qseqid']))
+
+len(adaptBact2fungSet.difference(adaptSpruce2bactSet))
+
+help(set(adapt2bact['qseqid']).intersection)
+
+adaptAllset = (
+set(adapt2bact['qseqid'])
+  .intersection(set(adapt2fung['qseqid']))
+  .intersection(set(adapt2spruce['qseqid']))
+)
+
+
+len(set(adapt2spruce['qseqid'])) ## 1188134 adapt reads that align to bacteria somewhere
+len(set(adapt2fung['qseqid'])) ## 439708 adapt reads that align to fungi somewhere
+len(set(adapt2bact['qseqid'])) ## 478762 adapt reads that align to bacteria somewhere
+
+len(adaptSpruce2bactSet) ## 420454 reads align to both bacteria and host
+len(adaptSpruce2fungSet) ## 384684 reads align to both fungi and host
+len(adaptBact2fungSet) ## 284242 reads align to both bacteria and fungi
+len(adaptAllset) ## 229675 reads align to all three, spruce/bact/fung
+
+## are there reads that are unique to each?
+
+onlyFung = set(adapt2fung['qseqid']).difference(adapt2bact['qseqid']).difference(adapt2spruce['qseqid'])
+onlyBact = set(adapt2bact['qseqid']).difference(adapt2fung['qseqid']).difference(adapt2spruce['qseqid']) 
+onlySpruce = set(adapt2spruce['qseqid']).difference(adapt2fung['qseqid']).difference(adapt2bact['qseqid']) 
+allMicro = set(adapt2bact['qseqid']).union(adapt2fung['qseqid'])
+
+onlyMicro = (set(adapt2bact['qseqid'])
+                .union(adapt2fung['qseqid'])
+                .difference(adapt2spruce['qseqid']))
+
+## total unique reads that mapped to something:
+
+allalignedReads = (
+set(adapt2spruce['qseqid'])
+.union(adapt2bact['qseqid'])
+.union(adapt2fung['qseqid']) ) 
+
+len(onlyFung) ## 457
+len(onlyBact) ## 3741
+len(onlySpruce) ## 612671
+len(set(adapt2spruce['qseqid'])) ## 1188134 or 1,188,134
+
+len(set(adapt2bact['qseqid'])) ## 478 762 reads
+
+len(allMicro) ## 634228
+len(onlyMicro) ## 58765
+len(allalignedReads) ## 1246899 or 1,246,899 reads
+
+## 420 454 reads align to both host and bact. 
+len(adaptSpruce2bactSet) 
+
+## this meands 87% of our microbial reads also align to host
+## casting doubt on their actual origin
+len(adaptSpruce2bactSet) / len(set(adapt2bact['qseqid'])) 
+
+## might be good to venn diagram a bit, this is getting confusing
+
+## the takeaways, we have 58,765 definite microbial reads, out of 1.2 million...
+54567 / 1246899 ## 0.0438 or 4.3% in noAdapt
+
+## but a total of 634228 reads that have aligned to the microbes, most of which 
+## also aligned to spruce genome. So another simple metric would be total microbial
+## reads, don't worry about host:
+
+len(allMicro) / len(allalignedReads) ## 50.9%
+
+## to make the  comparisons, make the important sets also from noAdapt data:
+
+noAdapt2spruce
+noAdapt2bact
+noAdapt2fung 
+
+noAdaptOnlyMicro = (set(noAdapt2bact['qseqid'])
+                .union(noAdapt2fung['qseqid'])
+                .difference(noAdapt2spruce['qseqid']))
+
+noAdaptallalignedReads = (set(noAdapt2spruce['qseqid'])
+                            .union(noAdapt2bact['qseqid'])
+                            .union(noAdapt2fung['qseqid']) ) 
+
+noAdaptallMicro = set(noAdapt2bact['qseqid']).union(noAdapt2fung['qseqid'])
+
+len(noAdaptOnlyMicro) ## 797
+len(noAdaptallalignedReads) ## 24378
+len(noAdaptallMicro) ## 10832
+
+len(noAdaptOnlyMicro)/len(noAdaptallalignedReads) ## 0.0326 or 3.3%, not much less.
+len(noAdaptallMicro)/len(noAdaptallalignedReads) ## 0.444 or 44.4%, so adaptive seq is ~6% higher
+
+len(noAdaptallMicro)/len(noAdaptallalignedReads) ## 0.444 or 44.4%, so adaptive seq is ~6% higher
+
+## so we still have a whole lot of ambiguity. We have to attack this problem somehow...
+
+## the idea here is that if we look at these reads more closely, it is possible that 
+## nearly all the noAdapt reads that blast to both host and microbe are actually only host,
+## and some of the adapt reads that blast to both host and microbe are actually only microbial
+
+## if either of those are true, it strengthens the case for the adaptive run actually working...
+
+## two ways to go with this, quality cutoffs vs classification
+
+## probably best to do a classification. look at a few examples
+
+## reads that blast to both host and bacteria in noAdapt:
+
+noAdaptSpruce2bactSet = set(noAdapt2spruce['qseqid']).intersection(set(noAdapt2bact['qseqid']))
+
+len(noAdaptSpruce2bactSet) ## 7068 reads align to both host and bacteria in noAdapt data
+
+noAdaptSpruce2bactSet
+
+## subset our df to this:
+
+noAdapt2spruce.set_index('qseqid', inplace=True)
+noAdapt2bact.set_index('qseqid', inplace=True)
+
+aa = noAdapt2spruce.loc[list(noAdaptSpruce2bactSet)] ## reads 
+bb = noAdapt2bact.loc[list(noAdaptSpruce2bactSet)]
+cc = pd.concat([aa,bb])
+
+seq="ca93338d-31db-4f97-8295-80b856663911" ## example where we categorize to bacteria
+seq="b9647056-50ae-40db-b2d6-cc3237b68226" ## example where we categorize to host
+dd = cc.loc[seq]; dd
+
+## or just:
+seq=random.sample(list(noAdaptSpruce2bactSet),1)[0]
+dd = cc.loc[seq]; dd
+
+## problem is, this is assymetrical. Reads that come from the host should have a 
+## really high identity. And reads that come from bacteria will not, because
+## chances are we don't have an exact match to their actual genome, even with 
+## 20,000 genomes or whatever we got...
+
+## maybe it makes most sense to take strict alignments out (> 95% sequence ID?)
+## and assume the rest are microbial?
+
+## noAdapt, take all reads that aligned to a microbe, then remove any that 
+## have >95% sequence identity to a host read
+
+## mean %identity for reads that blast to host: 
+
+noAdapt2spruce['pident'].mean() ## 83%
+
+adapt2spruce['pident'].mean() ## 85%. Actually higher, maybe. 
+
+## jeezus, is there any difference? We excluded 600,000 reads 
+## and it doesn't matter? I am so confused. 
+
+aa = noAdapt2spruce.loc[list(noAdaptSpruce2bactSet)] ## reads 
+
+aa[aa['pident'] > 94.999].shape
+
+noAdapt2spruce.shape #29972
+noAdapt2spruce[noAdapt2spruce['pident'] > 94.999].shape ## 484, miniscule amount
+
+pd.set_option('display.max_rows', None)
+
+noAdapt2spruce.shape
+noAdapt2spruce[noAdapt2spruce['pident'] > 94.999].shape
+noAdapt2bact[noAdapt2bact['pident'] > 94.999].shape
+
+pd.reset_option('all')
+
+## nope. Strict matches to host don't seem to be anymore common in our 
+## nonAdaptive run, in the reads that do actually align to host.
+
+## okay, let's iterate through, make matches, and take those with the highest
+## bit score. I have a feeling this will also show no difference between
+## the two runs, but we have to try:
+
+noAdapt2spruce.set_index('qseqid', inplace=True)
+noAdapt2bact.set_index('qseqid', inplace=True)
+
+## they both need an identity column before we concat:
+
+len(noAdaptSpruce2bactSet)
+
+aa = noAdapt2spruce.loc[list(noAdaptSpruce2bactSet)]
+aa['aligned2'] = 'spruce'
+bb = noAdapt2bact.loc[list(noAdaptSpruce2bactSet)]
+bb['aligned2'] = 'bact'
+cc = pd.concat([aa,bb])
+
+## the process for one read would go like this:
+ff = pd.DataFrame(columns=['qseqid','aligned2'])
+
+seq=random.sample(list(noAdaptSpruce2bactSet),1)[0]
+dd = cc.loc[seq]
+dd.reset_index(inplace=True)
+ee = dd.iloc[dd['bitscore'].idxmax(), ][['qseqid','aligned2']]
+ff = pd.concat([ff,ee.to_frame().T], ignore_index=True)
+
+
+## do this as a loop
+
+noAdaptSpruce2bactSet = set(noAdapt2spruce['qseqid']).intersection(set(noAdapt2bact['qseqid']))
+aa = noAdapt2spruce.loc[list(noAdaptSpruce2bactSet)]
+aa['aligned2'] = 'spruce'
+bb = noAdapt2bact.loc[list(noAdaptSpruce2bactSet)]
+bb['aligned2'] = 'bact'
+cc = pd.concat([aa,bb])
+ff = pd.DataFrame(columns=['qseqid','aligned2'])
+for seq in list(noAdaptSpruce2bactSet):
+    dd = cc.loc[seq]
+    dd.reset_index(inplace=True)
+    ee = dd.iloc[dd['bitscore'].idxmax(), ][['qseqid','aligned2']]
+    ff = pd.concat([ff,ee.to_frame().T], ignore_index=True)
+
+print(ff.groupby('aligned2').count())
+
+## inputs to this are: 
+## df of reads aligned to spruce
+## df of reads aligned to bact
+
+## so we can make this a function/script:
+
+## do this outside of conda...
+pip3 install Biopython
+pip3 install pandas
+
+###################################################################
+#!/usr/bin/env/python3
+
+import pandas as pd
+import os, random
+from Bio import SeqIO
+
+os.chdir('/vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt')
+
+def bestGuessBactSpruce(aligned2spruceDF, aligned2bactDF):
+  Spruce2bactSet = set(aligned2spruceDF['qseqid']).intersection(set(aligned2bactDF['qseqid']))
+  aligned2spruceDF.set_index(['qseqid'], inplace=True)
+  aligned2bactDF.set_index(['qseqid'], inplace=True)
+  aa = aligned2spruceDF.loc[list(Spruce2bactSet)]
+  aa['aligned2'] = 'spruce'
+  bb = aligned2bactDF.loc[list(Spruce2bactSet)]
+  bb['aligned2'] = 'bact'
+  cc = pd.concat([aa,bb])
+  ff = pd.DataFrame(columns=['qseqid','aligned2'])
+  for seq in list(Spruce2bactSet):
+      dd = cc.loc[seq]
+      dd.reset_index(inplace=True)
+      ee = dd.iloc[dd['bitscore'].idxmax(), ][['qseqid','aligned2']]
+      ff = pd.concat([ff,ee.to_frame().T], ignore_index=True)
+  return(ff)
+
+head=[ 'qseqid','sseqid','pident','length','mismatch',
+  'gapopen','qstart','qend','sstart','send','evalue','bitscore' ]
+
+noAdapt2spruce = pd.read_csv("noAdaptiveSamp_Spruce_blastn.csv", names=head)
+adapt2spruce = pd.read_csv("depletionTrial_Spruce_blastn.csv", names=head)
+noAdapt2bact = pd.read_csv("noAdaptiveSamp_bacterial_blastn.csv", names=head)
+adapt2bact = pd.read_csv("depletionTrial_bacterial_blastn.csv", names=head)
+
+noAdaptSeqCategorized = bestGuessBactSpruce(noAdapt2spruce, noAdapt2bact)
+adaptSeqCategorized = bestGuessBactSpruce(adapt2spruce, adapt2bact)
+
+
+noAdaptSeqCategorized.to_csv('noAdaptSeqCategorized.csv')
+adaptSeqCategorized.to_csv('adaptSeqCategorized.csv')
+#############################################################################3
+
+print(noAdaptSeqCategorized.groupby('aligned2').count())
+print(adaptSeqCategorized.groupby('aligned2').count())
+
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/compareAdapt
+
+chmod 777 categorizeSeqsSpruceOrBact.py
+
+nohup python3 ./categorizeSeqsSpruceOrBact.py &
+
