@@ -969,6 +969,8 @@ readfish targets --device MN40608 \
               --toml bigGenome_depletion.toml \
               --log-file depleteSpruce_test.log
 
+## where does this go?
+sudo find -name "depleteSpruceGenome" -type d &
 
 ## looks like it is working well, the mapping times 
 ## are really low, ~0.13s
@@ -3526,5 +3528,76 @@ aa.tail()
 
 plt.plot(aa['Experiment Time (minutes)']/60,aa['Basecalled Bases'])
 
+##### try host depletion again #####
+
+## now we will repeat the initial experiment of depleting host
+## let's try refreshing the mmi file, don't know if the 
+## one we have really works
+
+cd /media/vol1/daniel/spruce
+
+cd /media/vol1/daniel/hostDepletion/ourData/
+
+\time minimap2 -d Pabies_repeatsCompressed_mt_ch.mmi Pabies_repeatsCompressed_mt_ch.fa 
+## that used ~24gig memory. not horrible
+
+## so our index is here:
+index=/media/vol1/daniel/spruce/Pabies_repeatsCompressed_mt_ch.mmi
+
+cd /media/vol1/daniel/hostDepletion/hostDepletion3phase
+
+## our toml file should look something like this:
+
+##### hostDepletion3phase_phase2.toml #########
+[caller_settings]
+config_name = "dna_r10.4.1_e8.2_400bps_fast.cfg"
+host = "ipc:///tmp/.guppy/"
+port = 5555
+
+[conditions]
+reference = "/media/vol1/daniel/spruce/Pabies_repeatsCompressed_mt_ch.mmi"
+
+[conditions.0]
+name = "hostDepletion3phase_phase2"
+control = false
+min_chunks = 0
+max_chunks = 3
+targets = []
+single_on = "unblock"
+multi_on = "unblock"
+single_off = "unblock"
+multi_off = "unblock"
+no_seq = "proceed"
+no_map = "stop_receiving"
+############################
+
+readfish validate hostDepletion3phase_phase2.toml
+## returns the following which I do not understand:
+
+"""
+Region 'hostDepletion3phase_phase2' (control=False) has 0 contigs of
+which 0 are in the reference.
+"""
+
+## sounds ominous. Other than that, seems ok. 
+
+## let's try it and see if it rejects reads.
+
+## readfish command should look like this:
+
+## should probably run this on the machine itself, and not remotely.
+
+cd /media/vol1/daniel/hostDepletion/hostDepletion3phase
+
+readfish targets --device MN40608 \
+              --experiment-name "hostDepletion3phase" \
+              --toml hostDepletion3phase_phase2.toml \
+              --log-file hostDepletion3phase_phase2.log
 
 
+## alternatively, maybe I can install minknow on my local machine? meh. 
+
+## if I start this now, it will have to run for ~4 hours...
+
+## as soon as possible, we'll need to start the alignments from these
+## runs to get bacterial genomes for enrichment. 
