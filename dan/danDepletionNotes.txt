@@ -3874,43 +3874,6 @@ nohup blastn -db $bactRefGenome \
 ## started at 16:00 on thursday
 ## finished in ~1 hour
 
-## okay, now we need to connect the accession numbers in this table to their 
-## genome:
-
-head /mnt/ephem/look4bact3phase/phase1control/phase1control_bacterial_alignments.csv
-
-bactRefGenome=/vol/piceaNanopore/dan/bactGenomes/allbactGenomes.fa
-
-## for example, where is NZ_JANRML010000035.1?
-
-grep "NZ_JANRML010000035.1" $bactRefGenome
-
-## that is going to take forever...
-## we need to get a catalogue of where these things came from. 
-
-less $bactRefGenome
-
-head -n 30 $bactRefGenome | grep "^>" 
-
-cd /mnt/ephem/look4bact3phase
-
-grep "^>" $bactRefGenome > allRefBactHeaders.txt
-
-grep -c "^>" $bactRefGenome
-
-head allRefBactHeaders.txt | cut -f1-3 -d" "
-
-head allRefBactHeaders.txt | cut -f1-3 -d" " | sed "s/ /,/"
-
-tail allRefBactHeaders.txt | cut -f1-3 -d" "
-
-tail allRefBactHeaders.txt | cut -f1-3 -d" " | sed "s/ /,/" |
-sed "s/>//"
-
-## use that when the file is down building. 
-## might be too big for pandas?
-
-
 
 
 ###### repeat with phase2 ##########
@@ -4017,15 +3980,15 @@ for seqRec in SeqIO.parse("phase2hostDepletionReads.fastq", "fastq"):
       notInAlignment.append(seqRec)
 
 
-## not run ##
-## not run ##
-## not run ##
+len(poorMatches) ##4752
+len(notInAlignment) ##24744
 
 poorOrExluded = poorMatches + notInAlignment
 
 len(poorOrExluded)
 
 ## write these out as a fasta:
+
 poorOrExluded
 
 SeqIO.write(poorOrExluded, "phase2hostDepletion_notAligned.fasta", "fasta")
@@ -4036,6 +3999,7 @@ cd /mnt/ephem/look4bact3phase/phase2hostDepletion
 
 bactRefGenome=/vol/piceaNanopore/dan/bactGenomes/allbactGenomes.fa
 phase2unaligned=phase2hostDepletion_notAligned.fasta
+
 nohup blastn -db $bactRefGenome \
   -query $phase2unaligned \
   -num_threads 25 \
@@ -4043,4 +4007,306 @@ nohup blastn -db $bactRefGenome \
   -out phase2hostDepletion_bacterial_alignments.csv \
   -outfmt 10 &
 
+#### connect the blast matches to genomes  ####
 
+## okay, now we need to connect the accession numbers in this table to their 
+## genome:
+
+head /mnt/ephem/look4bact3phase/phase1control/phase1control_bacterial_alignments.csv
+
+bactRefGenome=/vol/piceaNanopore/dan/bactGenomes/allbactGenomes.fa
+
+## for example, where is NZ_JANRML010000035.1?
+
+grep "NZ_JANRML010000035.1" $bactRefGenome
+
+## that is going to take forever...
+## we need to get a catalogue of where these things came from. 
+
+less $bactRefGenome
+
+head -n 30 $bactRefGenome | grep "^>" 
+
+cd /mnt/ephem/look4bact3phase
+
+grep "^>" $bactRefGenome > allRefBactHeaders.txt
+
+grep -c "^>" $bactRefGenome ## 5941882
+wc -l allRefBactHeaders.txt ## 5941882
+
+head allRefBactHeaders.txt 
+
+tail allRefBactHeaders.txt | cut -f1-3 -d" " | sed "s/ /,/" |
+sed "s/>//"
+
+cut -f1-3 -d" " allRefBactHeaders.txt | sed "s/ /,/" |
+sed "s/>//" > allRefBactHeaders.csv
+
+
+## ah, there is an extra comma here:
+sed -n '35522p' allRefBactHeaders.csv 
+## and here
+sed -n '37404p' allRefBactHeaders.csv 
+
+## actually, there are like 100 of those things:
+grep -c ",$" allRefBactHeaders.csv ##111
+
+sed -i "s/,$//" allRefBactHeaders.csv ##111
+
+head allRefBactHeaders.csv  
+
+less /mnt/ephem/bactGenomes/genNames.txt
+
+grep "Chroococcidiopsis" /mnt/ephem/bactGenomes/genNames.txt
+
+grep "Chroococcidiopsis" /mnt/ephem/bactGenomes/assembly_summary.txt
+
+grep "NZ_MVDI01000074" /mnt/ephem/bactGenomes/assembly_summary.txt
+
+## okay, done. How can we turn this into something useful?
+## one thing we have here is RAM. 
+## so try a pandas solution
+
+conda deactivate
+
+python3
+import pandas as pd
+from Bio import SeqIO
+import os
+
+aa = pd.read_csv('allRefBactHeaders.csv', names=['accession', 'sp'])
+aa.shape ## 5941882
+
+## that works, but doesn't actually help us find the genomes we 
+## need, give a list of of accession numbers that are contigs.
+
+## we are going to have to match up species names with genome file 
+## names.
+
+## this means looking in the first line of each genome file and 
+## and getting the species name out of it. 
+## ugh. 
+
+cd /mnt/ephem/look4bact3phase
+
+for i in /mnt/ephem/bactGenomes/refSeq/*; do
+  echo -n $i >> bactRefGenFirstLines.txt
+  sed -n "1p" $i >> bactRefGenFirstLines.txt
+done &
+
+wc -l bactRefGenFirstLines.txt ## 67014 fits the number of genomes
+
+head bactRefGenFirstLines.txt
+
+## this seems to work:
+head bactRefGenFirstLines.txt | cut --complement -f1-5 -d"/" | sed 's/ /\t/'| sed 's/>/\t/'
+tail -n 4 bactRefGenFirstLines.txt | cut --complement -f1-5 -d"/" | sed 's/ /\t/'| sed 's/>/\t/'
+
+cut --complement -f1-5 -d"/" bactRefGenFirstLines.txt | sed 's/ /\t/'| sed 's/>/\t/' > bactRefGenFirstLines.tsv
+
+
+## now use this third column to look for genome files to grab
+## this will be difficult, probably best done in python...
+
+## so for example, we need these organisms from our control:
+/mnt/ephem/look4bact3phase/phase1control/phase1control_bacterial_alignments.csv
+
+## for each line of this, we need to take the contig name,
+## look for a string match somewhere in third column of
+/mnt/ephem/look4bact3phase/bactRefGenFirstLines.tsv
+## and take the genome name (first column)
+
+## that will tell us which genomes to grab.
+## but once we do that, we have to make 
+## targets out of these, somehow...
+
+## think about that in a minute. first, which genomes
+## do we need?
+
+cd /mnt/ephem/look4bact3phase
+
+python3
+import pandas as pd
+from Bio import SeqIO
+import os
+
+bactRefGenomes = pd.read_csv('/mnt/ephem/look4bact3phase/bactRefGenFirstLines.tsv', names=['filename','accession', 'sp'], sep='\t')
+
+## for phase1control:
+
+head=[ 'qseqid','sseqid','pident','length','mismatch',
+  'gapopen','qstart','qend','sstart','send','evalue','bitscore' ]
+phase1aligns=pd.read_csv("/mnt/ephem/look4bact3phase/phase1control/phase1control_bacterial_alignments.csv", names=head)
+
+phase1aligns.head()
+
+pd.set_option('display.max_rows', None)
+phase1aligns ## there is a diversity of microbes here
+pd.reset_option('all')
+
+phase1aligns['sseqid'].unique().shape ## there are 4000 different contigs aligned too
+
+phase1bactContigs=pd.Series(phase1aligns['sseqid'].unique())
+
+pd.set_option('display.max_rows', None)
+#phase1bactContigs
+bactRefGenomes['accession']
+pd.reset_option('all')
+
+bactRefGenomes['accession'].shape ## 67014
+bactRefGenomes['accession'].unique().shape ## 67014 all unique, that's good
+
+bactRefGenomes['accession'].str[0:10].unique() ## 61439 some repeats
+
+bactRefGenomes['accession'].str[0:10].unique().shape ## 61439 some repeats?? how can there be more than:
+bactRefGenomes['accession'].str[0:11].unique().shape ## 67014 ??? we recover original, lower number.
+## don't have time to figure this out. Assume we need 0:11
+
+## we should be able to shorten our accession numbers to this,
+
+phase1aligns['sseqid'].str[0:11].unique().shape ## this brings us to 3045 uniq values
+
+phase1bactAccessions = pd.Series(phase1aligns['sseqid'].str[0:11].unique())
+
+phase1bactAccessions.iloc[0]
+
+## and can we find these in our genomes
+
+aa=phase1bactAccessions.iloc[0]
+bactRefGenomes['accession'].str.contains(aa).sum()
+
+## let's check, with these acession names, are all represented by a genome?
+bb = phase1bactAccessions.apply(lambda x: bactRefGenomes['accession'].str.contains(x).any()) 
+
+bactRefGenomes['accession']
+
+bb.sum() ## 2863, out of 3045 unique contig names, so nope 
+
+## ugh, why didn't I put genome names in the contig names!!???
+
+## are there contigs that are represented multiple times?
+phase1aligns.head()
+
+phase1aligns.groupby('sseqid').count()['length']
+
+(phase1aligns.groupby('sseqid').count()['length'] > 1).sum() ## 854 yes, lots
+(phase1aligns.groupby('sseqid').count()['length'] > 2).sum() ## 428
+(phase1aligns.groupby('sseqid').count()['length'] > 3).sum() ## 307
+(phase1aligns.groupby('sseqid').count()['length'] > 4).sum() ## 236
+(phase1aligns.groupby('sseqid').count()['length'] > 5).sum() ## 193
+(phase1aligns.groupby('sseqid').count()['length'] > 6).sum() ## 163
+(phase1aligns.groupby('sseqid').count()['length'] > 7).sum() ## 163
+(phase1aligns.groupby('sseqid').count()['length'] > 10).sum() ## 105
+(phase1aligns.groupby('sseqid').count()['length'] > 20).sum() ## 53
+(phase1aligns.groupby('sseqid').count()['length'] > 30).sum() ## 41
+(phase1aligns.groupby('sseqid').count()['length'] > 100).sum() ## 18
+(phase1aligns.groupby('sseqid').count()['length'] > 200).sum() ## 11
+(phase1aligns.groupby('sseqid').count()['length'] > 250).sum() ## 9
+(phase1aligns.groupby('sseqid').count()['length'] > 300).sum() ## 7
+
+## how about we take just those contigs that appear at least 200 times?
+
+## which are these?
+
+phase1aligns.head()
+
+aa = pd.Series(phase1aligns['sseqid'].unique())
+filter = (phase1aligns.groupby('sseqid').count()['length'] > 200).to_list()
+
+phase1controlVeryCommonContigs = aa[filter]
+phase1controlVeryCommonContigs.reset_index(inplace=True, drop=True)
+
+phase1controlVeryCommonContigs_short = phase1controlVeryCommonContigs.str[0:11]
+
+## can we find these genomes?
+
+bb = phase1controlVeryCommonContigs_short.apply(lambda x: bactRefGenomes['accession'].str.contains(x).any()) 
+bb.all() ## they all seem to be discoverable this way
+
+phase1controlVeryCommonContigs_short
+
+bactRefGenomes.head()
+
+bactRefGenomes['access_short'] = bactRefGenomes['accession'].str[0:11] 
+
+genomeFilter = bactRefGenomes['access_short'].apply(lambda x: x in phase1controlVeryCommonContigs_short.values)
+
+bactRefGenomes[genomeFilter]
+
+phase1controlCommonBact = bactRefGenomes[genomeFilter]
+
+help(phase1controlCommonBact.to_csv)
+
+phase1controlCommonBact.to_csv('phase1controlCommonBact.csv', index=False)
+
+## these files should be:
+  GCF_000153465.1_ASM15346v1_genomic.fna
+     GCF_000618385.1_EcK1795_genomic.fna
+ GCF_001896145.1_ASM189614v1_genomic.fna
+ GCF_002109385.1_ASM210938v1_genomic.fna
+ GCF_003258865.1_ASM325886v1_genomic.fna
+ GCF_004342085.1_ASM434208v1_genomic.fna
+ GCF_005780165.1_ASM578016v1_genomic.fna
+GCF_014199735.1_ASM1419973v1_genomic.fna
+GCF_014200015.1_ASM1420001v1_genomic.fna
+GCF_014636175.1_ASM1463617v1_genomic.fna
+       GCF_022664535.1_Sx8-8_genomic.fna
+
+## btw, I think we should include a Corynebacterium genome, it keeps popping up.
+
+## okay, can we repeat this with the new alignment?
+
+####### find common bact from host depletion ########
+
+cd /mnt/ephem/look4bact3phase
+
+python3
+import pandas as pd
+from Bio import SeqIO
+import os
+
+bactRefGenomes = pd.read_csv('/mnt/ephem/look4bact3phase/bactRefGenFirstLines.tsv', names=['filename','accession', 'sp'], sep='\t')
+
+head=[ 'qseqid','sseqid','pident','length','mismatch',
+  'gapopen','qstart','qend','sstart','send','evalue','bitscore' ]
+phase2aligns=pd.read_csv("/mnt/ephem/look4bact3phase/phase2hostDepletion/phase2hostDepletion_bacterial_alignments.csv", names=head)
+
+phase2aligns.head()
+
+phase2aligns.shape ##33238 alignments
+
+phase2aligns['sseqid'].unique().shape ## there are 7714 different contigs aligned too
+
+
+phase2aligns.groupby('sseqid').count()['length']
+
+phase2aligns['sseqid'].str[0:11].unique().shape ## this brings us to 3045 uniq values
+## to sleepy to think about what that means..I think it means that there 
+## probably 3045 genomes represented, so ~3045 "otus", strain level
+
+aa = pd.Series(phase2aligns['sseqid'].unique())
+
+## we have a larger dataset. contigs that have been aligned to <500 times
+## gets us to 9 contigs, probably nine genomes
+filter = (phase2aligns.groupby('sseqid').count()['length'] > 200).to_list()
+sum(filter) ## 22 contigs
+
+filter = (phase2aligns.groupby('sseqid').count()['length'] > 400).to_list()
+sum(filter) ## 13 contigs
+
+filter = (phase2aligns.groupby('sseqid').count()['length'] > 500).to_list()
+sum(filter) ## 9 contigs
+
+
+phase2hostDepletionVeryCommonContigs = aa[filter]
+
+phase2hostDepletionVeryCommonContigs.reset_index(inplace=True, drop=True)
+
+phase2hostDepletionVeryCommonContigs_short = phase2hostDepletionVeryCommonContigs.str[0:11]
+
+genomeFilter = bactRefGenomes['access_short'].apply(lambda x: x in phase2hostDepletionVeryCommonContigs_short.values)
+
+bactRefGenomes[genomeFilter]
+
+phase2hostDepletionCommonBact = bactRefGenomes[genomeFilter]
+phase2hostDepletionCommonBact.to_csv('phase2hostDepletionCommonBact.csv', index=False)
