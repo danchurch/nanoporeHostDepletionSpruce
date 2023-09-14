@@ -3601,3 +3601,446 @@ readfish targets --device MN40608 \
 
 ## as soon as possible, we'll need to start the alignments from these
 ## runs to get bacterial genomes for enrichment. 
+
+
+##### get bacterial reads out of controls #####
+
+## so we've run through about half the flow cell
+## on a non-adaptive sample and a host-depletion 
+## sample. Now it's time to try to enrich for 
+## specific bacteria. We only have one DNA sample
+## prepped, and its been on the sequencer for 
+## 20 hours. I thought we would have multiple
+## preps...we don't, so we have to be ~quick here.
+
+## step one would be a minimap alignment to 
+## to host, to remove most of the uncertain 
+## reads. 
+
+## step two would be a blast or minimap alignment
+## to the concatenated reference genomes that 
+## we have from NCBI
+
+## we probably need denbi for this. We know that 
+## the adaptive sampling with host depletion probably
+## didn't do much. As in, they are probably pretty
+## similar in composition, maybe slightly higher
+## microbial reads in the host-depletion. 
+
+## so get them onto denbi, index the host 
+## genome, then take all the bad matches:
+
+## get both files onto denbi, have to send them 
+## from the lab computer. For the moment, 
+## let's put them in the ephemeral storage:
+
+/mnt/ephem
+
+## transfer the phase1 passed reads from labcomp to denbi: ##
+cd /var/lib/minknow/data/experiment_spruce_threephase/controll_130923/20230913_1355_MN40608_FAX46654_83018e78
+## add in some of the extra info
+cp throughput_FAX46654_83018e78_fa004816.csv fastq_pass/
+tar cvf phase1control.tar fastq_pass/
+## ship it
+path2get="/var/lib/minknow/data/experiment_spruce_threephase/controll_130923/20230913_1355_MN40608_FAX46654_83018e78/phase1control.tar"
+path2put="/mnt/ephem/"
+scp -rP 30419 -i ~/.ssh/lab2denbi $path2get ubuntu@129.70.51.6:$path2put
+
+## transfer the phase2 passed reads from labcomp to denbi: ##
+cd /var/lib/minknow/data/experiment_spruce_threephase/phase2hostDepletion/20230913_2238_MN40608_FAX46654_d4c9fea9
+## add in some of the extra info
+cp throughput_FAX46654_d4c9fea9_2bd0e514.csv fastq_pass/
+cp unblocked_read_ids.txt fastq_pass/
+tar cvf phase2hostDepletion.tar fastq_pass/
+## ship it
+path2get=/var/lib/minknow/data/experiment_spruce_threephase/phase2hostDepletion/20230913_2238_MN40608_FAX46654_d4c9fea9/phase2hostDepletion.tar
+path2put="/mnt/ephem/"
+scp -rP 30419 -i ~/.ssh/lab2denbi $path2get ubuntu@129.70.51.6:$path2put
+
+## back on denbi
+## now extract, decompress, concat these
+
+cd /mnt/ephem/look4bact3phase
+
+mkdir phase1control
+
+cd /mnt/ephem/look4bact3phase/phase1control/
+
+tar xvf phase1control.tar
+
+mv fastq_pass/ phase1controlReads/
+
+
+cd /mnt/ephem/look4bact3phase/phase1control/phase1controlReads
+gunzip *
+
+cat *fastq > phase1controlReads.fastq
+mv phase1controlReads.fastq ../
+gzip *
+
+## our concatenated reads are therefore in a single file at:
+ls /mnt/ephem/look4bact3phase/phase1control/phase1controlReads.fastq
+
+mkdir phase2hostDepletion/
+
+tar xvf phase2hostDepletion.tar
+
+mv fastq_pass/ phase2hostDepletionReads/
+
+cd /mnt/ephem/look4bact3phase/phase2hostDepletion/phase2hostDepletionReads
+gunzip *
+cat *fastq > phase2hostDepletionReads.fastq
+mv phase2hostDepletionReads.fastq ../
+gzip *
+
+
+#### align 3phase reads to host:
+
+## we have an mmi of host here, the one we 
+## used for readfish, on nanocomp...is it on denbi?
+
+## something similar here:
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/spruceRefGenome
+
+\time minimap2 -d Pabies-haploid_withOrganelles.mmi Pabies-haploid_withOrganelles.fa
+## used ~24 gig, for a 9.5 gig genome. 
+## so don't think it will be possible to do the really large fastas of 
+## concatenated bacterial ref genomes, probably have to stick with blast for that...
+
+ls $sprucemmi
+
+grep -c "^@.*runid=" phase1controlReads.fastq
+
+wc -l phase1controlReads.fastq ## 310832 reads. seems small
+
+## now align our control reads against this host genome:
+
+cd /mnt/ephem/look4bact3phase/phase1control
+
+
+
+grep -c "^@.*runid=" phase1controlReads.fastq ## 310832 reads. seems small
+
+sprucemmi=/vol/piceaNanopore/dan/chrisHostDepletionTrial/spruceRefGenome/Pabies-haploid_withOrganelles.mmi
+reads=/mnt/ephem/look4bact3phase/phase1control/phase1controlReads.fastq
+cd /mnt/ephem/look4bact3phase/phase1control
+nohup minimap2  -I100g -t 20 -ax map-ont $sprucemmi $reads 1> phase1control_Align2Spruce.sam 2> phase1control_Align2Spruce.log &
+## outputs are funny, no header, samtools won't play with it
+
+## try with paf file format
+cd /mnt/ephem/look4bact3phase/phase1control
+sprucemmi=/vol/piceaNanopore/dan/chrisHostDepletionTrial/spruceRefGenome/Pabies-haploid_withOrganelles.mmi
+reads=/mnt/ephem/look4bact3phase/phase1control/phase1controlReads.fastq
+nohup minimap2 \
+    -I100g \
+    --secondary=no \
+    -t 20 \
+    -x map-ont \
+    $sprucemmi $reads 1> phase1control_Align2Spruce.paf 2> phase1control_Align2Spruce.paf.log &
+
+## removing secondary alignments takes us from 13,642,947 to 9,868,731 alignments
+## this should create a blastn-like output. take into pandas, get all the really bad or missing matches:
+
+cut -f1 phase1control_Align2Spruce.paf | sort | uniq | wc -l ## 297780 uniq sequences, did we lose some? 
+
+less phase1control_Align2Spruce.paf ## needs some trimming:
+
+
+## test it out:
+head -n 3 phase1control_Align2Spruce.paf | cut -f13- --complement  
+
+cut -f13- --complement phase1control_Align2Spruce.paf > phase1control_Align2Spruce.tsv
+
+
+## get this into python, get all the shitty or non-alignments:
+
+python3
+import pandas as pd
+from Bio import SeqIO
+import os
+
+pafHeaders=[ "QueryName","QueryLength","QueryStart","QueryEnd","RelativeStrand",
+"TargetName","TargeLength","TargetStart","TargetEnd",
+"ResidueMatches","AlignmentBlockLngth","MappingQuality"]
+aa=pd.read_csv("phase1control_Align2Spruce.tsv", sep="\t", names=pafHeaders)
+
+aa.head()
+
+aa['MappingQuality'].max() ##60, makes sense
+aa['MappingQuality'].min() ##0, also makes sense
+aa['MappingQuality'].mean() ## 24, huh, not great. but who cares right now? 
+
+## these are phred scores of the probability of a read being misaligned
+## phred scores a negative log, higher means lower prob of being wrong, 
+## or higher prob of being right. 
+
+## I think I had this mixed up earlier.
+
+## anyway, maybe we take all the <10 matches?
+
+## first, we need to get the best-scoring alignment
+## for every read...
+
+## I think we can get that this way:
+bb = aa.groupby('QueryName')['MappingQuality'].max()
+
+bb.shape ## 297780
+
+aa['QueryName'].unique().shape ## 297780, same, good
+## but there are 310832 reads in the run...what happened
+## to the others? that's ~13,000 reads, could be useful here... 
+
+310832 - 297780 ## 13,052 reads not included  
+
+#filter = bb == 0 
+#bb[filter].shape ## 520 reads if we use mq=0 
+
+filter = bb < 5 
+cc = bb[filter].index.to_list()
+
+len(cc) ## 1760 reads if we use mq=5, keep it there
+
+aa.set_index('QueryName', inplace=True)
+
+pd.set_option('display.max_rows', None)
+
+aa.loc[cc] ## we still have lots of multimatches, just of poor quality
+
+pd.reset_option('all')
+
+aa.reset_index(inplace=True)
+
+## so these are the reads we should check for bacterial alignments.
+
+## but there are still 12000 reads missing out there - why didn't minimap 
+## include these?
+
+## which are they?
+readsInAlignment = bb.index.to_list()
+
+len(readsInAlignment)
+
+## we should be able to read in the fastq, and keep just the poor matches 
+## above, plus the reads that seem to have been discarded by minimap
+
+poorMatches = []
+for seqRec in SeqIO.parse("phase1controlReads.fastq", "fastq"):
+    print(seqRec.id)
+    if seqRec.id in cc: 
+      poorMatches.append(seqRec)
+
+notInAlignment = []
+for seqRec in SeqIO.parse("phase1controlReads.fastq", "fastq"):
+    print(seqRec.id)
+    if seqRec.id not in readsInAlignment: 
+      notInAlignment.append(seqRec)
+      print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
+
+len(poorMatches) ##1760
+len(notInAlignment) ##13052
+
+## qualities are still in there:
+print(poorMatches[0].format("fastq"))
+
+## add the reads that were left out by minimap
+
+notInAlignment[0]
+
+poorOrExluded = poorMatches + notInAlignment
+
+len(poorOrExluded)
+
+## write these out as a fasta:
+poorOrExluded
+
+SeqIO.write(poorOrExluded, "phase1controlReads_notAligned.fasta", "fasta")
+
+## then run blast alignment against the bact ref genome
+
+## our blastn database for the bacterial reference genomes are here:
+
+conda activate blast
+
+cd /mnt/ephem/look4bact3phase/phase1control/
+bactRefGenome=/vol/piceaNanopore/dan/bactGenomes/allbactGenomes.fa
+phase1unaligned=phase1controlReads_notAligned.fasta
+nohup blastn -db $bactRefGenome \
+  -query $phase1unaligned \
+  -num_threads 25 \
+  -num_alignments 3 \
+  -out phase1control_bacterial_alignments.csv \
+  -outfmt 10 &
+
+## started at 16:00 on thursday
+## finished in ~1 hour
+
+## okay, now we need to connect the accession numbers in this table to their 
+## genome:
+
+head /mnt/ephem/look4bact3phase/phase1control/phase1control_bacterial_alignments.csv
+
+bactRefGenome=/vol/piceaNanopore/dan/bactGenomes/allbactGenomes.fa
+
+## for example, where is NZ_JANRML010000035.1?
+
+grep "NZ_JANRML010000035.1" $bactRefGenome
+
+## that is going to take forever...
+## we need to get a catalogue of where these things came from. 
+
+less $bactRefGenome
+
+head -n 30 $bactRefGenome | grep "^>" 
+
+cd /mnt/ephem/look4bact3phase
+
+grep "^>" $bactRefGenome > allRefBactHeaders.txt
+
+grep -c "^>" $bactRefGenome
+
+head allRefBactHeaders.txt | cut -f1-3 -d" "
+
+head allRefBactHeaders.txt | cut -f1-3 -d" " | sed "s/ /,/"
+
+tail allRefBactHeaders.txt | cut -f1-3 -d" "
+
+tail allRefBactHeaders.txt | cut -f1-3 -d" " | sed "s/ /,/" |
+sed "s/>//"
+
+## use that when the file is down building. 
+## might be too big for pandas?
+
+
+
+
+###### repeat with phase2 ##########
+
+cd /mnt/ephem/look4bact3phase/phase2hostDepletion
+
+grep -c "^@.*runid=" phase2hostDepletionReads.fastq ## 587477 Comparable.
+
+cd /mnt/ephem/look4bact3phase/phase2hostDepletion
+
+#sprucemmi=/vol/piceaNanopore/dan/chrisHostDepletionTrial/spruceRefGenome/Pabies-haploid_withOrganelles.mmi
+#reads=/mnt/ephem/look4bact3phase/phase2hostDepletion/phase2hostDepletionReads.fastq
+#nohup minimap2  -I100g -t 20 -ax map-ont $sprucemmi $reads 1> phase2hostDepletion_Align2Spruce.sam 2> phase2hostDepletion_Align2Spruce.log &
+#samtools view phase2hostDepletion_Align2Spruce.sam 
+
+## yeah, also fucked
+
+## do paf instead
+
+#cd /mnt/ephem/look4bact3phase/phase2hostDepletion
+#sprucemmi=/vol/piceaNanopore/dan/chrisHostDepletionTrial/spruceRefGenome/Pabies-haploid_withOrganelles.mmi
+#reads=/mnt/ephem/look4bact3phase/phase2hostDepletion/phase2hostDepletionReads.fastq
+#nohup minimap2  -I100g -t 20 -x map-ont $sprucemmi $reads 1> phase2hostDepletion_Align2Spruce.paf 2> phase2hostDepletion_Align2Spruce.paf.log &
+
+## try this instead, no secondary:
+cd /mnt/ephem/look4bact3phase/phase2hostDepletion
+sprucemmi=/vol/piceaNanopore/dan/chrisHostDepletionTrial/spruceRefGenome/Pabies-haploid_withOrganelles.mmi
+reads=/mnt/ephem/look4bact3phase/phase2hostDepletion/phase2hostDepletionReads.fastq
+nohup minimap2 \
+  -I100g \
+  -t 20 \
+  -x map-ont \
+  --secondary=no \
+  $sprucemmi $reads \
+  1> phase2hostDepletion_Align2Spruce.paf \
+  2> phase2hostDepletion_Align2Spruce.paf.log &
+
+
+cut -f13- --complement phase2hostDepletion_Align2Spruce.paf > phase2hostDepletion_Align2Spruce.tsv
+
+head phase2hostDepletion_Align2Spruce.tsv
+
+wc -l phase2hostDepletion_Align2Spruce.tsv ## 10604949
+
+cut -f1 phase2hostDepletion_Align2Spruce.tsv | sort | uniq | wc -l ## 562733
+
+grep -c "@.*runid=" phase2hostDepletionReads.fastq ## 587,477 
+wc -l phase2hostDepletionReads.fastq ## 587,477 sequences. As before, so are not included in the alignment
+
+## python to parse results
+
+python3
+import pandas as pd
+from Bio import SeqIO
+import os
+
+pafHeaders=[ "QueryName","QueryLength","QueryStart","QueryEnd","RelativeStrand",
+"TargetName","TargeLength","TargetStart","TargetEnd",
+"ResidueMatches","AlignmentBlockLngth","MappingQuality"]
+aa=pd.read_csv("phase2hostDepletion_Align2Spruce.tsv", sep="\t", names=pafHeaders)
+
+
+aa.head()
+
+aa['MappingQuality'].max() ##60
+aa['MappingQuality'].min() ##0
+aa['MappingQuality'].mean() ## 22
+aa['QueryName'].unique().shape ## 562733
+
+bb = aa.groupby('QueryName')['MappingQuality'].max()
+filter = bb < 5 
+cc = bb[filter].index.to_list()
+
+len(cc) ## 4752 reads if we use mq=5, keep it there
+
+pd.set_option('display.max_rows', None)
+
+aa.set_index('QueryName', inplace=True)
+
+aa.loc[cc] ## we still have lots of multimatches, just of poor quality
+
+pd.reset_option('all')
+
+aa.reset_index(inplace=True)
+
+readsInAlignment = bb.index.to_list()
+
+poorMatches = []
+for seqRec in SeqIO.parse("phase2hostDepletionReads.fastq", "fastq"):
+    print(seqRec.id)
+    if seqRec.id in cc: 
+      poorMatches.append(seqRec)
+
+len(poorMatches) ## 4752, seems right
+
+587477 - 562733 ## 24,744 reads not included in the alignment!
+
+readsInAlignment = bb.index.to_list()
+notInAlignment = []; a=0; b=587477; c=0; d=24744
+for seqRec in SeqIO.parse("phase2hostDepletionReads.fastq", "fastq"):
+    a+=1; print(f'{a} records checked out of {b} records in fastq file')
+    if seqRec.id not in readsInAlignment: 
+      c+=1; print(f'found another read not in the alignment: {c} reads written out of total {d} reads excluded from alignment to host')
+      notInAlignment.append(seqRec)
+
+
+## not run ##
+## not run ##
+## not run ##
+
+poorOrExluded = poorMatches + notInAlignment
+
+len(poorOrExluded)
+
+## write these out as a fasta:
+poorOrExluded
+
+SeqIO.write(poorOrExluded, "phase2hostDepletion_notAligned.fasta", "fasta")
+
+conda activate blast
+
+cd /mnt/ephem/look4bact3phase/phase2hostDepletion
+
+bactRefGenome=/vol/piceaNanopore/dan/bactGenomes/allbactGenomes.fa
+phase2unaligned=phase2hostDepletion_notAligned.fasta
+nohup blastn -db $bactRefGenome \
+  -query $phase2unaligned \
+  -num_threads 25 \
+  -num_alignments 3 \
+  -out phase2hostDepletion_bacterial_alignments.csv \
+  -outfmt 10 &
+
+
