@@ -4310,3 +4310,137 @@ bactRefGenomes[genomeFilter]
 
 phase2hostDepletionCommonBact = bactRefGenomes[genomeFilter]
 phase2hostDepletionCommonBact.to_csv('phase2hostDepletionCommonBact.csv', index=False)
+
+### ok, so concatenate these:
+
+phase1controlCommonBact = pd.read_csv('phase1controlCommonBact.csv')
+
+phase1controlCommonBact 
+phase2hostDepletionCommonBact
+
+interestingGenomes = pd.concat([phase1controlCommonBact,phase2hostDepletionCommonBact]).reset_index(drop=True)
+
+interestingGenomes
+
+## now, how do we convert this into a useful target for readfish?
+
+cd /mnt/ephem/look4bact3phase
+
+interesting=(
+/mnt/ephem/bactGenomes/refSeq/GCF_000153465.1_ASM15346v1_genomic.fna 
+/mnt/ephem/bactGenomes/refSeq/GCF_000618385.1_EcK1795_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_001896145.1_ASM189614v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_002109385.1_ASM210938v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_003258865.1_ASM325886v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_004342085.1_ASM434208v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_005780165.1_ASM578016v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_014199735.1_ASM1419973v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_014200015.1_ASM1420001v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_014636175.1_ASM1463617v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_022664535.1_Sx8-8_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_000510665.1_ASM51066v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_002312805.1_ASM231280v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_002778835.1_ASM277883v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_004795855.1_ASM479585v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_006385685.1_ASM638568v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_013112485.1_ASM1311248v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_014202505.1_ASM1420250v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_027945725.1_ASM2794572v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_030269665.1_ASM3026966v1_genomic.fna
+)
+
+
+echo ${interesting[*]}
+
+echo ${interesting[@]}
+
+cd /mnt/ephem/look4bact3phase/interestingGenomes
+
+for i in ${interesting[@]}; do
+ cp $i .
+done
+
+du -sh ## these total to just 113M
+
+## great. 
+
+## we want to get rid of the headers...can we do this?:
+
+cd /mnt/ephem/look4bact3phase/interestingGenomes
+
+
+grep -v "^>" GCF_022664535.1_Sx8-8_genomic.fna | sed '1i\>GCF_022664535.1_Sx8-8_genomic.fna' > test.fasta
+
+text="zoop!"
+grep -v "^>" GCF_022664535.1_Sx8-8_genomic.fna | sed "1i\>$text" > test.fasta
+## optional:
+seqtk seq -l 80 test.fasta > testPretty.fasta
+
+## loop this:
+
+cd /mnt/ephem/look4bact3phase/interestingGenomes
+#mkdir catInterestingGenomes
+for i in *.fna; do
+  echo $i
+  j=$(basename $i _genomic.fna)
+  grep -v "^>" $i | sed "1i\>$j" > "catInterestingGenomes/"$j"_modif.fna"
+done
+
+## and concat these:
+
+cd /mnt/ephem/look4bact3phase/interestingGenomes/catInterestingGenomes
+
+cat * > catCommonBacterialGenomes.fna
+
+## clean up a bit
+
+seqtk seq -l 80 catCommonBacterialGenomes.fna > commonBacterialGenomes.fna
+
+grep -c "^>" commonBacterialGenomes.fna ## twenty genomes, each genome is a target.
+
+## put this on the nanocomp computer, try using it for a reference genome to enrich:
+
+/mnt/ephem/look4bact3phase/interestingGenomes/catInterestingGenomes/commonBacterialGenomes.fna 
+
+path2get=/mnt/ephem/look4bact3phase/interestingGenomes/catInterestingGenomes/commonBacterialGenomes.fna 
+path2put=/media/vol1/daniel/hostDepletion/bacteriaEnrich3phase/
+scp -rP 30419 -i ~/.ssh/lab2denbi ubuntu@129.70.51.6:$path2get $path2put
+
+## make an mmi
+conda activate readfish
+minimap2 -d commonBacterialGenomes.mmi commonBacterialGenomes.fna
+
+## we need a toml file
+
+### bacterialEnrichment.toml ###
+[caller_settings]
+config_name = "dna_r10.4.1_e8.2_400bps_fast.cfg"
+host = "ipc:///tmp/.guppy/"
+port = 5555
+
+[conditions]
+reference = "/media/vol1/daniel/hostDepletion/bacteriaEnrich3phase/commonBacterialGenomes.mmi"
+
+[conditions.0]
+name = "bacterialEnrichment3phase_phase3"
+control = false
+min_chunks = 0
+max_chunks = 3
+targets = ["GCF_000153465.1_ASM15346v1", "GCF_000510665.1_ASM51066v1", "GCF_000618385.1_EcK1795", "GCF_001896145.1_ASM189614v1", "GCF_002109385.1_ASM210938v1", "GCF_002312805.1_ASM231280v1", "GCF_002778835.1_ASM277883v1", "GCF_003258865.1_ASM325886v1", "GCF_004342085.1_ASM434208v1", "GCF_004795855.1_ASM479585v1", "GCF_005780165.1_ASM578016v1", "GCF_006385685.1_ASM638568v1", "GCF_013112485.1_ASM1311248v1", "GCF_014199735.1_ASM1419973v1", "GCF_014200015.1_ASM1420001v1", "GCF_014202505.1_ASM1420250v1", "GCF_014636175.1_ASM1463617v1", "GCF_022664535.1_Sx8-8", "GCF_027945725.1_ASM2794572v1", "GCF_030269665.1_ASM3026966v1"]
+single_on = "stop_receiving"
+multi_on = "stop_receiving"
+single_off = "unblock"
+multi_off = "unblock"
+no_seq = "proceed"
+no_map = "unblock"
+############################
+
+
+cd /media/vol1/daniel/hostDepletion/bacteriaEnrich3phase
+
+readfish targets --device MN40608 \
+              --experiment-name "hostDepletion3phase" \
+              --toml bacterialEnrichment.toml \
+              --log-file hostDepletion3phase_phase3.log
+
+
