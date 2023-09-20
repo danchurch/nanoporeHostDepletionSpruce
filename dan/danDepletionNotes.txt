@@ -1425,6 +1425,31 @@ wc -l allChrisHostDepletionTrial_noShorts.fastq ## 5005332 / 4 = 1251333
 ## the pipeline below with this file?
 ## soon but not yet.
 
+## make a more sensible script of this process for Lara:
+
+## step 1 - concatenate all your fastq files that passed. You know how to do this.
+
+## step 2 - get a list of all the names of reads in the fastq.
+## I use the program "sed" for this. The following command 
+## prints every fourth line, and cleans extra information with "cut"
+## and another sed command to get rid of "@" fromt the read names. 
+## This should result in a file that is a list of names of 
+## all your passed reads from the second run
+
+sed -n '1~4p' yourCombinedPassedReads.fastq | 
+cut -f 1 -d " " | 
+sed "s/^@//" > yourCombinedPassedReads.txt
+
+## check it! does the text in this file match
+## the names of your passed reads?
+
+## step 3 - remove the names of reads that were unblocked (rejected)
+## by readfish: 
+
+sort <(cat allChrisHostDepletionTrial_pass_names.txt unblocked_read_ids.txt) > comboNames.txt
+uniq -u comboNames.txt > allChrisHostDepletionTrial_noShorts_names.txt
+
+
 ###########
 
 ## for now build the pipeline with crude, <600 bp reads removed file:
@@ -4442,5 +4467,127 @@ readfish targets --device MN40608 \
               --experiment-name "hostDepletion3phase" \
               --toml bacterialEnrichment.toml \
               --log-file hostDepletion3phase_phase3.log
+
+
+############## switch over computers ###########
+
+## okay, we have to set up the new denbi comp
+## we need to get the files we need off the 
+## ephemeral storage
+
+## then shut down and restart, should be the lower
+## memory instance. 
+
+## we have ~497G of mixed genomes. 
+## what do we need to keep?
+
+## the concatenated files are nice, but we 
+## lost all the species information when we
+## concatenated them. 
+
+## but we did all the work of created blast indexes 
+## for the concatenated files...
+
+## I think we can repeat this with lower memory. 
+## the downloads were the greater time commitment.
+
+## so keep the separate files, ditch the concatenated
+## genomes
+
+## to keep things organized, all the download metadata
+## might be useful, make the bact and fung architecture
+## the same:
+
+cd /mnt/ephem/fungalGenomes
+
+cd /vol/piceaNanopore/dan/fungalGenomes
+
+fungDownloadMeta=(
+depletionTrial_fungal_blastn.csv
+howmanyfungi.txt
+nohup.out
+)
+
+for i in ${fungDownloadMeta[@]}; do
+  #ls $i 
+  mv $i /mnt/ephem/fungalGenomes/
+done
+
+## now we can move the entire directories over to the volume
+
+## but we have to make room, need to delete the concatenated 
+## directories:
+
+## concatenated genomes are here:
+
+ls /vol/piceaNanopore/dan/bactGenomes/
+
+ls /vol/piceaNanopore/dan/fungalGenomes/
+
+## let's clear these out. nervewracking, they were a lot of work.
+
+cd /vol/piceaNanopore/dan/
+
+rm -r /vol/piceaNanopore/dan/bactGenomes/
+
+rm -r /vol/piceaNanopore/dan/fungalGenomes/
+   
+## should have room now, but let's see if there 
+## are other things we can clean up:
+
+## the next big memory suck is here:
+/vol/piceaNanopore/chris/k2_standard_20230605
+
+## what is this? Ask chris if we can delete
+## yup
+
+rm -r /vol/piceaNanopore/chris/k2_standard_20230605
+
+## anyway, we have enough room to transfer the 
+## genomes:
+
+cd /vol/piceaNanopore/dan/ 
+
+cp -r /mnt/ephem/bactGenomes /vol/piceaNanopore/dan/refGenomes/ &
+cp -r /mnt/ephem/fungalGenomes /vol/piceaNanopore/dan/refGenomes/ &
+
+
+## don't think we need to bother deleting these original files... 
+## anything else to clean out?
+
+cp -r /mnt/ephem/look4bact3phase /vol/piceaNanopore/dan/ 
+
+## oh, right, a copy of our old fstab might be useful:
+
+LABEL=cloudimg-rootfs   /        ext4   defaults        0 1
+LABEL=UEFI      /boot/efi       vfat    umask=0077      0 1
+/dev/vdb        /mnt    auto    defaults,nofail,x-systemd.requires=cloud-init.service,_netdev,comment=cloudconfig       0       2
+/dev/vdc        none    swap    sw,comment=cloudconfig  0       0
+UUID=bca62bee-3532-4905-9789-30b70c09c86b       /vol/piceaNanopore      auto    defaults        0       2
+
+## anything else....nope...
+
+sudo shutdown -r now
+
+## lara pubic key =??
+|1|y6vljbmOiUmIHZ98qaudURXjEaM=|yQ7qTlGbUJOkUrJVH0fbCS01wp0= ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTYAAAAIbmlzdHAyNTYAAABBBDkrKMDJpr+Uw7RpUKU8lEzARXqGPf5HoI///qj1ZMb+ZkIac0DxJ/GHglBcGPo8qwApYKkT8D3FU4Ro7hlrLHs= 
+
+## update fstab
+
+ls -l /dev/disk/by-uuid/ ## looks same as above
+
+blkid /dev/vdd ## not on there
+
+lsblk -f ## yup. same as above. add the above line to fstab and make the path
+
+## looks good, just need to get lara's login going...
+
+
+## try an example fastqc run
+
+fastqc -t 3 --extract sample1.fq.gz
+
+path2get=/home/test/sample1_fastqc.html
+scp -r -i ~/.ssh/id_ed25519 test@132.180.112.115:$path2get /home/daniel/Desktop
 
 

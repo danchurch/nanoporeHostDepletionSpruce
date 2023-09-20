@@ -1,0 +1,39 @@
+## step 1 - concatenate all your fastq files that passed. You know how to do this.
+
+## step 2 - get a list of all the names of reads in the fastq.
+## I use the program "sed" for this. The following command 
+## prints every fourth line, and cleans extra information with "cut"
+## and another sed command to get rid of "@" fromt the read names. 
+## This should result in a file that is a list of names of 
+## all your passed reads from the second run
+
+sed -n '1~4p' yourCombinedPassedReads.fastq | 
+cut -f 1 -d " " | 
+sed "s/^@//" > yourCombinedPassedReads.txt
+
+## check it! does the text in this file match
+## the names of your passed reads?
+
+## step 3 - remove the names of reads that were unblocked (rejected)
+## by readfish. We do this by concatenating, sorting and removing 
+## duplicates:
+
+## our file for unblocked reads for the hostdepletion (phase two) should be here:
+/var/lib/minknow/data/experiment_spruce_threephase/phase2hostDepletion/20230913_2238_MN40608_FAX46654_d4c9fea9/unblocked_read_ids.txt
+## make a copy of this (be careful, don't overwrite it)
+
+cat yourCombinedPassedReads.txt unblocked_read_ids.txt > passedAndUnblocked_notSorted.txt
+sort passedAndUnblocked_notSorted.txt > comboNames.txt
+uniq -u comboNames.txt > passedReads_noUnblocked.txt
+
+## check it! does it look like reads that were unblocked by readfish are no 
+## no longer in there? try using grep to check a few reads from "unblocked_read_ids.txt"
+
+grep "nameOfUnblockedReadHere!!" passedReads_noUnblocked.txt 
+## if it finds the unblocked read, something is probably wrong...
+
+## once you are sure this worked, use this list to pull out the reads
+## that we want from the original fastq:
+
+seqtk subseq yourCombinedPassedReads.fastq passedReads_noUnblocked.txt > passedReads_noUnblocked.fastq
+
