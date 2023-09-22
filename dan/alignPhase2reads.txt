@@ -1,0 +1,46 @@
+## find your reads to be aligned..
+## for today, we are using the raw nanopore reads from 
+## phase2. 
+## they will need to be concatenated, and the unblocked 
+## reads will need to be removed, like yesterday
+## then you should put them on your denbi computer 
+## somewhere
+
+## the lab computer can scp directly to denbi if you want to do
+## this, let me know if you want to set this up and need help
+
+
+## you have two large storage areas on denbi:
+
+## ephemeral storage is here:
+/mnt/ephem
+
+## long term storage is here:
+/vol/piceaNanopore
+
+## feel free to make yourself working directories in both
+
+## the full spruce genome is here on denbi:
+ls -lh /vol/piceaNanopore/spruceGenome/Pabies-haploid_withOrganelles.fa
+
+## make a fresh minimap2 index from this
+## (do you have minimap2 installed somewhere on denbi?)
+## (if not, make an environment and intall it!)
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/spruceRefGenome/
+
+## once you have your reads in place, and a minimap index
+
+reads=/path/to/your/reads
+nohup minimap2 \
+  -I100g \
+  -t 20 \
+  -x map-ont \
+  --secondary=no \
+  $sprucemmi $reads \
+  1> phase2hostDepletion_Align2Spruce.paf \
+  2> phase2hostDepletion_Align2Spruce.paf.log &
+
+## can you understand these arguments, if you look at the manual for minimap2?
+## as in: "man minimp2"
+
+## let's look at this together when you have this paf file.

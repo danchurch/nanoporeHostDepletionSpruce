@@ -1444,10 +1444,27 @@ sed "s/^@//" > yourCombinedPassedReads.txt
 ## the names of your passed reads?
 
 ## step 3 - remove the names of reads that were unblocked (rejected)
-## by readfish: 
+## by readfish. We do this by concatenating, sorting and removing 
+## duplicates:
 
-sort <(cat allChrisHostDepletionTrial_pass_names.txt unblocked_read_ids.txt) > comboNames.txt
-uniq -u comboNames.txt > allChrisHostDepletionTrial_noShorts_names.txt
+## our file for unblocked reads for the hostdepletion (phase two) should be here:
+/var/lib/minknow/data/experiment_spruce_threephase/phase2hostDepletion/20230913_2238_MN40608_FAX46654_d4c9fea9/unblocked_read_ids.txt
+## make a copy of this (be careful, don't overwrite it)
+
+cat yourCombinedPassedReads.txt unblocked_read_ids.txt > passedAndUnblocked_notSorted.txt
+sort passedAndUnblocked_notSorted.txt > comboNames.txt
+uniq -u comboNames.txt > passedReads_noUnblocked.txt
+
+## check it! does it look like reads that were unblocked by readfish are no 
+## no longer in there? try using grep to check a few reads from "unblocked_read_ids.txt"
+
+grep "nameOfUnblockedReadHere!!" passedReads_noUnblocked.txt 
+## if it finds the unblocked read, something is probably wrong...
+
+## once you are sure this worked, use this list to pull out the reads
+## that we want from the original fastq:
+
+seqtk subseq yourCombinedPassedReads.fastq passedReads_noUnblocked.txt > passedReads_noUnblocked.fastq
 
 
 ###########
@@ -4590,4 +4607,48 @@ fastqc -t 3 --extract sample1.fq.gz
 path2get=/home/test/sample1_fastqc.html
 scp -r -i ~/.ssh/id_ed25519 test@132.180.112.115:$path2get /home/daniel/Desktop
 
+##### lara alignments ####
 
+## find your reads to be aligned..
+## for today, we are using the raw nanopore reads from 
+## phase2. 
+## they will need to be concatenated, and the unblocked 
+## reads will need to be removed, like yesterday
+## then you should put them on your denbi computer 
+## somewhere
+
+## the lab computer can scp directly to denbi if you want to do
+## this, let me know if you want to set this up and need help
+
+
+## you have two large storage areas on denbi:
+
+## ephemeral storage is here:
+/mnt/ephem
+
+## long term storage is here:
+/vol/piceaNanopore
+
+## feel free to make yourself working directories in both
+
+## the full spruce genome is here on denbi:
+ls -lh /vol/piceaNanopore/spruceGenome/Pabies-haploid_withOrganelles.fa
+
+## make a fresh minimap2 index from this
+## (do you have minimap2 installed somewhere on denbi?)
+## (if not, make an environment and intall it!)
+cd /vol/piceaNanopore/dan/chrisHostDepletionTrial/spruceRefGenome/
+
+## once you have your reads in place, and a minimap index
+
+reads=/path/to/your/reads
+nohup minimap2 \
+  -I100g \
+  -t 20 \
+  -x map-ont \
+  --secondary=no \
+  $sprucemmi $reads \
+  1> phase2hostDepletion_Align2Spruce.paf \
+  2> phase2hostDepletion_Align2Spruce.paf.log &
+
+## let's look at this together when you have this paf file.
