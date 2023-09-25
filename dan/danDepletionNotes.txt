@@ -4652,3 +4652,33 @@ nohup minimap2 \
   2> phase2hostDepletion_Align2Spruce.paf.log &
 
 ## let's look at this together when you have this paf file.
+
+## looking at this in R:
+
+cd /vol/piceaNanopore/dan/look4bact3phase/phase2hostDepletion
+
+head phase2hostDepletion_Align2Spruce.paf
+
+cut -f1-12 phase2hostDepletion_Align2Spruce.paf | head -n 20 > paftoy.tsv
+
+R
+install.packages("dplyr")
+
+library("dplyr")
+
+## we want to get only the highest-quality alignment for each read to the 
+## spruce host:
+
+pafNames=c("QueryName","QueryLength","QueryStart","QueryEnd","RelativeStrand",
+"TargetName","TargeLength","TargetStart","TargetEnd",
+"ResidueMatches","AlignmentBlockLngth","MappingQuality")
+
+aa = read.csv("paftoy.tsv", sep="\t",col.names=pafNames)
+
+bb <- aa %>%
+  group_by(QueryName) %>%
+  summarize(maxScore = max(MappingQuality))
+
+bestscores = as.data.frame(bb)
+
+## we need to get the highest scoring read for 
