@@ -4662,8 +4662,7 @@ head phase2hostDepletion_Align2Spruce.paf
 cut -f1-12 phase2hostDepletion_Align2Spruce.paf | head -n 20 > paftoy.tsv
 
 R
-install.packages("dplyr")
-
+#install.packages("dplyr")
 library("dplyr")
 
 ## we want to get only the highest-quality alignment for each read to the 
@@ -4681,4 +4680,14 @@ bb <- aa %>%
 
 bestscores = as.data.frame(bb)
 
-## we need to get the highest scoring read for 
+
+:
+## can we do this with tapply? the old fashioned way? just for fun:
+bestMatchScore = tapply(aa$MappingQuality, aa$QueryName, max)
+
+## works, but then you have to parse it back to a dataframe
+bestMatchScoreDF = as.data.frame(bestMatchScore)
+
+## the two methods seem to give the same result...
+
+
