@@ -1,0 +1,41 @@
+## how do we get the matches not included in our alignment?
+
+## seqtk and sort/uniq might be useful
+
+## let's pretend the names of all the reads in the alignment are here:
+cut -f1-12 phase2hostDepletion_Align2Spruce.paf | head -n 20 > toy.paf
+
+## to get just the names we use cut
+cut toy.paf -f 1
+
+## so we can sort these and get only the unique ones:
+cut toy.paf -f 1 | sort | uniq > seqsThatAligned.txt
+
+## now we need the names of the sequences in our fastq
+
+## for this we would use sed, and tell it to print every 
+## fourth line
+
+sed -n '1~4p' toy.fastq 
+
+## but this gives us a lot of extra information. We just want the name of the read
+
+## cut to the rescue, again!
+
+sed -n '1~4p' toy.fastq |
+cut -f 1 -d " " 
+
+## but notice there is still an "@" at the beginning? Use sed again to get rid of it:
+
+sed -n '1~4p' toy.fastq |
+cut -f 1 -d " " |
+sed "s/^@//" > namesOfAllPhase2Reads.txt
+
+## give it a sanity-check, make sure it looks like only read names are in there
+## (with less or whatever)
+
+## now, we want get reads that didn't align at all to the spruce genome
+## this means we need to subtract the the aligned reads from the total reads
+
+## we can do this like we did before with "sort | uniq" 
+## can you build the command in BASH for this?
