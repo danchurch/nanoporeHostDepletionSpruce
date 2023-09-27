@@ -4740,3 +4740,155 @@ sed "s/^@//" > namesOfAllPhase2Reads.txt
 ## we can do this like we did before with "sort | uniq" 
 ## can you build the command in BASH for this?
 
+
+### new concatenated bacterial reference genome ###
+
+## we are going to remake our bacterial reference genome file
+
+## we need to ensure that includes the name of the organism it aligned to
+## and that we can recover the exact genome of the match, if necessary
+
+## our ref genomes are here:
+cd /vol/piceaNanopore/dan/refGenomes/bactGenomes/refSeq
+
+## is the information about organism name in all the record
+## names:
+
+exampleGens=(
+GCF_948472415.1_JK4103_genomic.fna
+GCF_948495795.1_MGBC105309_genomic.fna
+GCF_949025885.1_MGBC114154_genomic.fna
+GCF_949152215.1_Q7238_genomic.fna
+GCF_949152225.1_Q7487_genomic.fna
+GCF_949428155.1_extra-SRR4116659.61_1677764545_genomic.fna
+GCF_949429935.1_extra-SRR5574496.25_1677764854_genomic.fna
+GCF_949740115.1_iMGMC-24_1678881672_genomic.fna
+GCF_949743855.1_iMGMC-20_1678881660_genomic.fna
+GCF_949769135.1_Geo25_assembly_genomic.fna
+GCF_949769145.1_Geo24_assembly_genomic.fna
+GCF_949769155.1_Geo48_assembly_genomic.fna
+GCF_949769225.1_Q7072_genomic.fna
+GCF_949769255.1_Q7826_genomic.fna
+GCF_949769265.1_Q7820_genomic.fna
+GCF_949769285.1_Q7828_genomic.fna
+GCF_949775715.1_Brytella_acorum_LMG_32879_assembly_genomic.fna
+GCF_950054335.1_SRR3962771_bin.15_MetaWRAP_v1.3_MAG_genomic.fna
+GCF_950065245.1_SRR3960580_bin.7_MetaWRAP_v1.3_MAG_genomic.fna
+GCF_900215595.1_IMG-taxon_2728369725_annotated_assembly_genomic.fna
+GCF_900215605.1_IMG-taxon_2728369261_annotated_assembly_genomic.fna
+GCF_900215615.1_IMG-taxon_2738541359_annotated_assembly_genomic.fna
+GCF_900215625.1_IMG-taxon_2681812962_annotated_assembly_genomic.fna
+GCF_900215645.1_IMG-taxon_2716884894_annotated_assembly_genomic.fna
+GCF_900215655.1_IMG-taxon_2728369262_annotated_assembly_genomic.fna
+GCF_900215725.1_PRJEB22476_genomic.fna
+GCF_900217235.1_DPRO_PRJEB22548_v1_genomic.fna
+GCF_900217715.1_IMG-taxon_2596583541_annotated_assembly_genomic.fna
+GCF_900217725.1_IMG-taxon_2740891830_annotated_assembly_genomic.fna
+GCF_900217795.1_IMG-taxon_2740891832_annotated_assembly_genomic.fna
+GCF_900217815.1_IMG-taxon_2739368070_annotated_assembly_genomic.fna
+GCF_900217845.1_IMG-taxon_2596583606_annotated_assembly_genomic.fna
+GCF_900218015.1_IMG-taxon_2740891836_annotated_assembly_genomic.fna
+GCF_900218035.1_IMG-taxon_2596583532_annotated_assembly_genomic.fna
+GCF_900218065.1_Chol11_genomic.fna
+GCF_900220965.1_IMG-taxon_2740891860_annotated_assembly_genomic.fna
+GCF_900220975.1_IMG-taxon_2740891857_annotated_assembly_genomic.fna
+GCF_900220985.1_IMG-taxon_2740891889_annotated_assembly_genomic.fna
+)
+
+for i in ${exampleGens[@]}; do
+  ls $i
+  sed -n '1p' $i
+done
+
+## sure looks like it.
+## so we need to insure that blastn retains this information 
+## in the output
+
+## get blastn install via conda
+conda create -n blast -c bioconda blast
+
+conda activate blast
+
+## for example
+
+cd /vol/piceaNanopore/dan/refGenomes/bactGenomes/playWithBlast
+ 
+cp /vol/piceaNanopore/dan/refGenomes/bactGenomes/refSeq/GCF_013350045.1_ASM1335004v1_genomic.fna .
+
+## let's make two databases, one with parsing and one without
+## one may give the output we need...
+
+## first with parse
+makeblastdb -in GCF_013350045.1_ASM1335004v1_genomic.fna -parse_seqids -dbtype nucl 
+## try searching for known seq, check output:
+
+>randoseq
+GTCTTTGGCATCGTGCTTCGTTGGCAAGTTGTCGTCCAGTTCTTTCAACCGTTTGACATGCATCGGATTGACCATCACCA
+## in a file called randoseq.fa
+
+blastn -db GCF_013350045.1_ASM1335004v1_genomic.fna \
+  -query randoseq.fa \
+  -num_alignments 1 \
+  -out alignedWithParse.csv \
+  -outfmt "10 sacc staxids sscinames bitscore"
+
+## and that's not what we need, only retains the accession number, not organism name
+
+## try making database without parse:
+makeblastdb -in GCF_013350045.1_ASM1335004v1_genomic.fna -dbtype nucl
+
+sed -n "1p" GCF_013350045.1_ASM1335004v1_genomic.fna
+
+## in a file called randoseq.fa
+
+blastn -db GCF_013350045.1_ASM1335004v1_genomic.fna \
+  -query randoseq.fa \
+  -num_alignments 1 \
+  -out alignedNoParse.csv \
+  -outfmt "10 sacc sscinames"
+
+## nope, don't matter
+
+wget ftp://ftp.ncbi.nlm.nih.gov/blast/db/taxdb.tar.gz
+
+tar -xvf taxdb.tar.gz
+
+## none of this is working. 
+## so, maybe it is possible to edit the record 
+## headers?
+
+
+sed "/^>/ s/ /_/" GCF_013350045.1_ASM1335004v1_genomic.fna 
+
+## does this work on other genomes?
+
+cp ../refSeq/GCF_013419135.1_ASM1341913v1_genomic.fna . 
+
+sed "/^>/ s/ /_/" GCF_013350045.1_ASM1335004v1_genomic.fna | less
+
+## that also looks pretty good.
+
+## does this allow us to keep genus info in our blast matches?:
+cp "../refSeq/GCF_013419135.1_ASM1341913v1_genomic.fna" .
+cp "../refSeq/GCF_013350045.1_ASM1335004v1_genomic.fna" .
+cat GCF_013419135.1_ASM1341913v1_genomic.fna GCF_013350045.1_ASM1335004v1_genomic.fna > genome3.fna
+
+#genome="GCF_013419135.1_ASM1341913v1_genomic.fna"
+#genome="GCF_013350045.1_ASM1335004v1_genomic.fna"
+genome="genome3.fna"
+cp ../refSeq/$genome .
+rm *fna.n* ## get rid of old indexes
+sed -i  "/^>/ s/ /:/" $genome
+makeblastdb -in $genome -dbtype nucl
+blastn -db $genome \
+  -query randoseq.fa \
+  -num_alignments 1 \
+  -out aligned_keepGenus.csv \
+  -outfmt 10
+
+head aligned_keepGenus.csv 
+
+## seems to work. 
+## will probably fail somehow on the 
+## big concatenated genomes, but let's try.
+
