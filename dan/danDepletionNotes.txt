@@ -4892,3 +4892,7 @@ head aligned_keepGenus.csv
 ## will probably fail somehow on the 
 ## big concatenated genomes, but let's try.
 
+
+for i in *; do
+  echo $i
+done
