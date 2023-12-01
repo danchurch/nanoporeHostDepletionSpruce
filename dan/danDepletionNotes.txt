@@ -2812,7 +2812,6 @@ nohup makeblastdb -in allbactGenomes.fa -parse_seqids -dbtype nucl &
 cd /vol/piceaNanopore/dan/fungalGenomes
 nohup makeblastdb -in allFungalGenomes.fa -parse_seqids -dbtype nucl &
 
-
 ## raw reads blasted against bacteria:
 ## we are interested in blasting the raw reads, and the assemblies we have.
 
@@ -2861,7 +2860,6 @@ grep -c "Query=" $bactTxt
 grep -c "No hits found" $bactTxt
 
 grep -c "Sequences producing significant alignments:" $bactTxt && grep -c "Query=" $bactTxt 
-
 
 grep -c "Sequences producing significant alignments:" $bactTxt
 
@@ -3150,6 +3148,7 @@ adapt2fung['bitscore'].mean() ## 694
 
 adaptFasta = "/vol/piceaNanopore/dan/chrisHostDepletionTrial/nanoporeRunData/allChrisHostDepletionTrial_noShorts.fasta"
 allAdaptNamesl = []
+
 for i in SeqIO.parse(adaptFasta, "fasta"):
     allAdaptNamesl.append(i.id)
 
@@ -4892,7 +4891,114 @@ head aligned_keepGenus.csv
 ## will probably fail somehow on the 
 ## big concatenated genomes, but let's try.
 
-
 for i in *; do
   echo $i
 done
+
+## need to grab an example of our own higher quality 
+## data:
+
+scp 
+
+path2get=/media/vol1/daniel/hostDepletion/ourData/bigGenome_depletion_data/bigDataRedo/qcBig/comboSpruceZoop5_onlyBigReads_fastqc/fastqc_report.html 
+path2put=/home/daniel/Documents/projects/fichtelgebirge_project/spruceGenome/nanoporeHostDepletionSpruce/dan
+scp -r -i ~/.ssh/id_ed25519 test@132.180.112.115:$path2get $path2put
+
+## and Lara's fastqc reports, an example?
+path2get=/experiment_spruce_threephase/
+path2put=/home/daniel/Documents/projects/fichtelgebirge_project/spruceGenome/depletion2big4github/
+scp -r -i ~/.ssh/id_ed25519 daniel@132.180.112.24:$path2get $path2put
+
+ssh daniel@132.180.112.24
+/experiment_spruce_threephase
+
+## How is your 
+
+### backing up denbi ###
+
+## okay, we are done with our denbi instance for the moment,
+## so we need to back up our results - what and where?:
+
+## on denbi,
+## let's grab it all:
+
+## chris
+tar -czvf chrisNanoporeWork.gz /vol/piceaNanopore/chris
+
+tar -czvf danNanoporeWork.gz /vol/piceaNanopore/dan
+
+## put this onto my volume on the office computer:
+
+## from nanopore computer:
+
+## chris
+file=/home/ubuntu/chrisNanoporeWork.gz
+dest=/media/vol1/daniel/denbiBackups/
+scp -P 30336 -i /home/test/.ssh/lab2denbi ubuntu@129.70.51.6:$file $dest
+
+## my stuff:
+file=/home/ubuntu/danNanoporeWork.gz
+dest=/media/vol1/daniel/denbiBackups/
+scp -P 30336 -i /home/test/.ssh/lab2denbi ubuntu@129.70.51.6:$file $dest
+
+###### return to the data for grant writing #####
+
+## we need to get back to this now, look at what we did
+## where is the data now?
+
+## depends on what kind of data we want - we want the raw reads 
+## from all runs...
+
+## phase 1 is...here?
+
+/var/lib/minknow/data/experiment_spruce_threephase/controll_130923/20230913_1355_MN40608_FAX46654_83018e78
+
+## this experiment started on:
+2023-09-13T13:58:42.158478+02:00
+## and stopped on 
+2023-09-13T22:31:23.075176+02:00
+## so it lasted 9 hours or so?
+
+## phase 2:
+/var/lib/minknow/data/experiment_spruce_threephase/phase2hostDepletion/20230913_2238_MN40608_FAX46654_d4c9fea9
+2023-09-13T22:41:06.779062+02:00
+2023-09-14T03:49:52.747187+02:00
+## so 5 hours? 
+
+## phase 3 was in two parts:
+/var/lib/minknow/data/experiment_spruce_threephase/bacterialEnrichment
+/var/lib/minknow/data/experiment_spruce_threephase/bacterialEnrichment_second
+##  ran for several days:
+1 start 2023-09-15T02:19:17.868669+02:00
+1 stop  2023-09-15T17:19:19.107374+02:00
+2 start 2023-09-15T17:42:53.045486+02:00
+2 stop  2023-09-18T17:42:54.450859+02:00
+
+## anyway, looks right.  
+## what do we want to do with this?
+
+## we ran alignments to estimate 
+## amount of bacterial reads...
+
+## let's see if we can repeat Lara's results...
+
+## where do we get the reads that blasted to bacteria refGenomes?
+
+## can't find them on nanopore computer...
+
+## office computer:
+
+## ah, there they are.. 
+scp daniel@132.180.112.24:/home/lara/data/3phaseExperiment/phase*.csv .
+
+phase1_bacterial_blastn.csv
+phase2_bacterial_blastn.csv
+phase3_first_bacterial_blastn.csv
+phase3_second_bacterial_blastn.csv
+
+## and fungal reads? hope I kept this...
+## this may be it:
+
+scp test@132.180.112.115:/media/vol1/daniel/denbiBackups/vol/piceaNanopore/dan/refGenomes/fungalGenomes/depletionTrial_fungal_blastn.csv \
+  /home/daniel/Documents/projects/fichtelgebirge_project/spruceGenome/nanoporeHostDepletionSpruce/dan/reads3phaseBlast/readsBlast2Fungi/
+
