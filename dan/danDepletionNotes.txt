@@ -4980,8 +4980,6 @@ scp -P 30336 -i /home/test/.ssh/lab2denbi ubuntu@129.70.51.6:$file $dest
 ## we ran alignments to estimate 
 ## amount of bacterial reads...
 
-## let's see if we can repeat Lara's results...
-
 ## where do we get the reads that blasted to bacteria refGenomes?
 
 ## can't find them on nanopore computer...
@@ -5002,3 +5000,101 @@ phase3_second_bacterial_blastn.csv
 scp test@132.180.112.115:/media/vol1/daniel/denbiBackups/vol/piceaNanopore/dan/refGenomes/fungalGenomes/depletionTrial_fungal_blastn.csv \
   /home/daniel/Documents/projects/fichtelgebirge_project/spruceGenome/nanoporeHostDepletionSpruce/dan/reads3phaseBlast/readsBlast2Fungi/
 
+## but this approach isn't very useful to us. 
+## looking at my notes from before, it seems
+## that our approach of blasting to reference
+## genomes to discern if a read was microbial 
+## or not left us with a lot of ambiguity. 
+## we have a lot of reads that could belong to
+## hosts, chloroplasts, or to microbes. 
+## very difficult to distinguish. 
+
+## I would say try a simple alignment to 
+## host genome, keep only low-quality/non-matches
+## then try assembling a metagenome from 
+## each, and possibly also pooled. 
+## then run some comparisons and annotations
+
+## 1. get the concatenated fastq files 
+## from each run
+
+## these are:
+## phase1 reads: 
+
+cd /var/lib/minknow/data/experiment_spruce_threephase/controll_130923/20230913_1355_MN40608_FAX46654_83018e78/fastq_pass
+
+sudo gunzip *
+cat * > phase1controlAll.fastq
+mv phase1controlAll.fastq /media/vol1/daniel/hostDepletion/phase1control
+sudo gzip *
+
+## phase2 reads: 
+cd /var/lib/minknow/data/experiment_spruce_threephase/phase2hostDepletion/20230913_2238_MN40608_FAX46654_d4c9fea9/fastq_pass
+sudo gunzip *
+cat * > phase2hostDepletion.fastq
+mv phase2hostDepletion.fastq /media/vol1/daniel/hostDepletion/phase2hostDepletion/
+sudo gzip * &
+
+## phase3 reads: 
+
+## we had to do this in two experiments
+
+##part1
+cd /var/lib/minknow/data/experiment_spruce_threephase/bacterialEnrichment/20230915_0214_MN40608_FAX46654_a698b104/fastq_pass
+
+sudo gunzip *
+cat * > phase3bacterialEnrichment_part1.fastq
+mv phase3bacterialEnrichment_part1.fastq /media/vol1/daniel/hostDepletion/phase3bacterialEnrichment/
+sudo gzip * &
+
+##part2
+cd /var/lib/minknow/data/experiment_spruce_threephase/bacterialEnrichment_second/20230915_1740_MN40608_FAX46654_107b057e/fastq_pass
+
+sudo gunzip *
+cat * > phase3bacterialEnrichment_part2.fastq
+mv phase3bacterialEnrichment_part2.fastq /media/vol1/daniel/hostDepletion/phase3bacterialEnrichment/
+sudo gzip * &
+
+## let's concatenate these two into one phase3 file:
+
+cd /media/vol1/daniel/hostDepletion/phase3bacterialEnrichment/
+cat phase3bacterialEnrichment_part?.fastq > phase3bacterialEnrichment.fastq
+
+grep -c "@.*runid=" phase3*.fastq ## looks right
+
+## 2. align to spruce genome
+
+## where is our reference genome?
+
+## its here:
+cd /media/vol1/daniel/spruce/
+
+pabiesFullGenome=/media/vol1/daniel/spruce/Pabies-haploid_withOrganelles.fa
+
+ls $pabiesFullGenome
+
+cd /media/vol1/daniel/hostDepletion
+
+## make our index:
+\time minimap2 -d pabiesFullGenome.mmi $pabiesFullGenome
+
+## gives us a huge index...try alignments
+
+cd /media/vol1/daniel/hostDepletion/phase1control
+
+sprucemmi=/media/vol1/daniel/hostDepletion/pabiesFullGenome.mmi
+reads=phase1controlAll.fastq
+nohup minimap2 \
+  -I100g \
+  -t 20 \
+  -x map-ont \
+  --secondary=no \
+  $sprucemmi $reads \
+  1> phase2hostDepletion_Align2Spruce.paf \
+  2> phase2hostDepletion_Align2Spruce.paf.log &
+
+mv phase2hostDepletion_Align2Spruce.paf phase1control_Align2Spruce.paf 
+mv phase2hostDepletion_Align2Spruce.paf.log phase1control_Align2Spruce.paf.log
+
+
+## 3. try metagenome assembly, pooled and separate
