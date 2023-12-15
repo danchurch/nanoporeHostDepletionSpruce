@@ -3976,7 +3976,6 @@ pafHeaders=[ "QueryName","QueryLength","QueryStart","QueryEnd","RelativeStrand",
 "ResidueMatches","AlignmentBlockLngth","MappingQuality"]
 aa=pd.read_csv("phase2hostDepletion_Align2Spruce.tsv", sep="\t", names=pafHeaders)
 
-
 aa.head()
 
 aa['MappingQuality'].max() ##60
@@ -5035,11 +5034,69 @@ cat * > phase2hostDepletion.fastq
 mv phase2hostDepletion.fastq /media/vol1/daniel/hostDepletion/phase2hostDepletion/
 sudo gzip * &
 
+## we also need to exclude those reads that were 
+## rejected by readfish:
+
+cd /media/vol1/daniel/hostDepletion/phase2hostDepletion/
+
+## get read names:
+grep "runid" phase2hostDepletion.fastq | cut -f1 -d" " | 
+  sed "s/^@//" > phase2hostDepletionReadNames.txt
+
+## worked?
+wc -l phase2hostDepletionReadNames.txt ## 587477
+grep -c "runid" phase2hostDepletion.fastq  ##587477 same, good
+tail -n 8 phase2hostDepletion.fastq | 
+  sed -n "1~4p"  
+tail -n2 phase2hostDepletionReadNames.txt ## last two read names match
+## yep all lines up
+
+sudo chmod 444 $unblockedHostDep
+unblockedHostDep="/var/lib/minknow/data/experiment_spruce_threephase/phase2hostDepletion/20230913_2238_MN40608_FAX46654_d4c9fea9/unblocked_read_ids.txt"
+
+## derep
+cat phase2hostDepletionReadNames.txt $unblockedHostDep |
+sort | uniq -u  > phase2hostDepletion_noUnblocked.txt
+
+wc -l phase2hostDepletion_noUnblocked.txt 
+## 325,145 reads after removing rejected reads
+
+## keep only these:
+seqtk subseq phase2hostDepletion.fastq phase2hostDepletion_noUnblocked.txt > phase2hostDepletion_noUnblocked.fastq
+
+grep -c "runid=" phase2hostDepletion_noUnblocked.fastq ## 312189
+
+## here is the name of some reads that should have been allowed through
+grep 00001e70-3fbe-48d9-b3b5-834d9cce2689 phase2hostDepletionReadNames.txt
+grep -A 1 -B 1 00001e70-3fbe-48d9-b3b5-834d9cce2689 phase2hostDepletion.fastq
+grep 00001e70-3fbe-48d9-b3b5-834d9cce2689 $unblockedHostDep
+grep 00001e70-3fbe-48d9-b3b5-834d9cce2689 phase2hostDepletion_noUnblocked.fastq
+
+grep ffffb4e2-049b-4775-b535-f32c44e00316 phase2hostDepletionReadNames.txt
+grep -A 1 -B 1 ffffb4e2-049b-4775-b535-f32c44e00316 phase2hostDepletion.fastq
+grep ffffb4e2-049b-4775-b535-f32c44e00316 $unblockedHostDep
+grep ffffb4e2-049b-4775-b535-f32c44e00316 phase2hostDepletion_noUnblocked.fastq
+
+## and two that shouldn't have made it through:
+
+tail $unblockedHostDep 
+
+grep 3580be8c-a54a-40cb-86aa-6f891e6c84ae phase2hostDepletionReadNames.txt
+grep -A 1 -B 1 3580be8c-a54a-40cb-86aa-6f891e6c84ae phase2hostDepletion.fastq
+grep 3580be8c-a54a-40cb-86aa-6f891e6c84ae $unblockedHostDep
+grep 3580be8c-a54a-40cb-86aa-6f891e6c84ae phase2hostDepletion_noUnblocked.fastq
+
+grep dc4a8cb7-c51d-41cd-bc5f-efba7bfff288 phase2hostDepletionReadNames.txt
+grep -A 1 -B 1 dc4a8cb7-c51d-41cd-bc5f-efba7bfff288 phase2hostDepletion.fastq
+grep dc4a8cb7-c51d-41cd-bc5f-efba7bfff288 $unblockedHostDep
+grep dc4a8cb7-c51d-41cd-bc5f-efba7bfff288 phase2hostDepletion_noUnblocked.fastq
+## looks good.
+
 ## phase3 reads: 
 
 ## we had to do this in two experiments
+## bactEnrich part1
 
-##part1
 cd /var/lib/minknow/data/experiment_spruce_threephase/bacterialEnrichment/20230915_0214_MN40608_FAX46654_a698b104/fastq_pass
 
 sudo gunzip *
@@ -5047,7 +5104,31 @@ cat * > phase3bacterialEnrichment_part1.fastq
 mv phase3bacterialEnrichment_part1.fastq /media/vol1/daniel/hostDepletion/phase3bacterialEnrichment/
 sudo gzip * &
 
-##part2
+## we also need to exclude those reads that were 
+## rejected by readfish:
+
+cd /media/vol1/daniel/hostDepletion/phase3bacterialEnrichment/
+
+## unblocked reads are here:
+
+unblockedBacterialEnrichment1="/var/lib/minknow/data/experiment_spruce_threephase/bacterialEnrichment/20230915_0214_MN40608_FAX46654_a698b104/unblocked_read_ids.txt"
+chmod 444 $unblockedBacterialEnrichment1
+
+## get read names:
+grep "runid" phase3bacterialEnrichment_part1.fastq | cut -f1 -d" " | 
+  sed "s/^@//" > phase3bacterialEnrichment_part1_ReadNames.txt
+
+## get reads not in the unblocked list
+cat phase3bacterialEnrichment_part1_ReadNames.txt $unblockedBacterialEnrichment1 |
+sort | uniq -u  > phase3bacterialEnrichmentPart1_noUnblocked.txt
+
+## assuming that worked, keep only these reads that were not unblocked:
+seqtk subseq phase3bacterialEnrichment_part1.fastq phase3bacterialEnrichmentPart1_noUnblocked.txt > phase3bacterialEnrichment_part1_noUnblocked.fastq
+grep -c "runid=" phase3bacterialEnrichment_part1_noUnblocked.fastq  ## 238,794 reads, out of
+grep -c "runid=" phase3bacterialEnrichment_part1.fastq ## 2,304,569
+
+## bactEnrich part2
+
 cd /var/lib/minknow/data/experiment_spruce_threephase/bacterialEnrichment_second/20230915_1740_MN40608_FAX46654_107b057e/fastq_pass
 
 sudo gunzip *
@@ -5055,11 +5136,39 @@ cat * > phase3bacterialEnrichment_part2.fastq
 mv phase3bacterialEnrichment_part2.fastq /media/vol1/daniel/hostDepletion/phase3bacterialEnrichment/
 sudo gzip * &
 
+## we also need to exclude those reads that were 
+## rejected by readfish:
+
+## unblocked reads are here:
+unblockedBacterialEnrichment2="/var/lib/minknow/data/experiment_spruce_threephase/bacterialEnrichment_second/20230915_1740_MN40608_FAX46654_107b057e/unblocked_read_ids.txt"
+
+## we also need to exclude those reads that were 
+## rejected by readfish:
+
+cd /media/vol1/daniel/hostDepletion/phase3bacterialEnrichment/
+
+## unblocked reads are here:
+unblockedBacterialEnrichment2="/var/lib/minknow/data/experiment_spruce_threephase/bacterialEnrichment_second/20230915_1740_MN40608_FAX46654_107b057e/unblocked_read_ids.txt"
+chmod 444 $unblockedBacterialEnrichment2
+
+## get read names:
+grep "runid" phase3bacterialEnrichment_part2.fastq | cut -f1 -d" " | 
+  sed "s/^@//" > phase3bacterialEnrichment_part2_ReadNames.txt
+
+## get reads not in the unblocked list
+cat phase3bacterialEnrichment_part2_ReadNames.txt $unblockedBacterialEnrichment2 |
+sort | uniq -u  > phase3bacterialEnrichmentPart2_noUnblocked.txt
+
+## assuming that worked, keep only these reads that were not unblocked:
+seqtk subseq phase3bacterialEnrichment_part2.fastq phase3bacterialEnrichmentPart2_noUnblocked.txt > phase3bacterialEnrichment_part2_noUnblocked.fastq
+
+grep -c "runid=" phase3bacterialEnrichment_part2_noUnblocked.fastq  ## 102,051 reads, out of
+grep -c "runid=" phase3bacterialEnrichment_part2.fastq ## 979,336
+
 ## let's concatenate these two into one phase3 file:
 
 cd /media/vol1/daniel/hostDepletion/phase3bacterialEnrichment/
-cat phase3bacterialEnrichment_part?.fastq > phase3bacterialEnrichment.fastq
-
+cat *noUnblocked.fastq > phase3bacterialEnrichment_noUnblocked.fastq
 grep -c "@.*runid=" phase3*.fastq ## looks right
 
 ## 2. align to spruce genome
@@ -5080,21 +5189,194 @@ cd /media/vol1/daniel/hostDepletion
 
 ## gives us a huge index...try alignments
 
+## phase1:
 cd /media/vol1/daniel/hostDepletion/phase1control
-
 sprucemmi=/media/vol1/daniel/hostDepletion/pabiesFullGenome.mmi
 reads=phase1controlAll.fastq
+
 nohup minimap2 \
   -I100g \
   -t 20 \
   -x map-ont \
   --secondary=no \
   $sprucemmi $reads \
+  1> phase1control_Align2Spruce.paf \
+  2> phase1control_Align2Spruce.paf.log &
+
+## now use the results to find the low quality and non-matches. 
+## did this above somewhere, where is that code in all this 
+## mess?...
+## around line 3956
+
+cd /media/vol1/daniel/hostDepletion/phase1control
+
+grep -c "runid=" $reads ## 310832 reads from control 
+
+wc -l phase1control_Align2Spruce.paf ## 9,868,731 matches?
+
+cut -f13- --complement phase1control_Align2Spruce.paf > phase1control_Align2Spruce.tsv
+head phase1control_Align2Spruce.tsv
+
+## how many unique sequences are there?
+cut -f1 phase1control_Align2Spruce.tsv | sort | uniq | wc -l 
+## 297780 reads got aligned somehow, even if badly, out of 310832, or 
+297780/310832 ## = 96% aligned to host
+310832 - 297780 ## 13052
+
+## read into python:
+
+python3
+import pandas as pd
+from Bio import SeqIO
+import os
+
+pafHeaders=[ "QueryName","QueryLength","QueryStart","QueryEnd","RelativeStrand",
+"TargetName","TargeLength","TargetStart","TargetEnd",
+"ResidueMatches","AlignmentBlockLngth","MappingQuality"]
+
+aa=pd.read_csv("phase1control_Align2Spruce.tsv", sep="\t", names=pafHeaders)
+
+aa.head()
+aa.tail()
+aa['MappingQuality'].max() ##60
+aa['MappingQuality'].min() ##0
+aa['MappingQuality'].mean() ## 24
+aa['QueryName'].unique().shape ## 297,780
+
+## we want to keep any read, where the 
+## best match is still low. 
+
+bb = aa.groupby('QueryName')['MappingQuality'].max()
+filter = bb < 10 
+cc = bb[filter].index.to_list()
+len(cc) ## three thousand reads
+
+## get these sequences:
+poorMatches = []
+for seqRec in SeqIO.parse("phase1controlAll.fastq", "fastq"):
+    print(seqRec.id)
+    if seqRec.id in cc: 
+      poorMatches.append(seqRec)
+
+## it would be nice to include the totally unaligned
+## reads also
+
+readsInAlignment = aa['QueryName'].unique().tolist()
+notInAlignment = []; a=0; b=310832; c=0;
+for seqRec in SeqIO.parse("phase1controlAll.fastq", "fastq"):
+    a+=1; print(f'{a} records checked out of {b} records in fastq file')
+    if seqRec.id not in readsInAlignment: 
+      c+=1; print(f'found another read not in the alignment: {c} reads written out')
+      notInAlignment.append(seqRec)
+
+len(poorMatches) ## 3980
+len(notInAlignment) ## 13052, matches above number
+
+poorOrExluded = poorMatches + notInAlignment
+
+## write these out as a fasta:
+SeqIO.write(poorOrExluded, "phase1control_notAligned.fastq", "fastq")
+
+## repeat for other phases
+
+## phase2:
+
+cd /media/vol1/daniel/hostDepletion/phase2hostDepletion
+sprucemmi=/media/vol1/daniel/hostDepletion/pabiesFullGenome.mmi
+reads=phase2hostDepletion_noUnblocked.fastq
+
+nohup minimap2 \
+  -I100g \
+  -t 6 \
+  -x map-ont \
+  --secondary=no \
+  $sprucemmi $reads \
   1> phase2hostDepletion_Align2Spruce.paf \
   2> phase2hostDepletion_Align2Spruce.paf.log &
 
-mv phase2hostDepletion_Align2Spruce.paf phase1control_Align2Spruce.paf 
-mv phase2hostDepletion_Align2Spruce.paf.log phase1control_Align2Spruce.paf.log
+cut -f13- --complement phase2hostDepletion_Align2Spruce.paf > phase2hostDepletion_Align2Spruce.tsv
 
+head phase2hostDepletion_Align2Spruce.tsv
+
+## how many unique sequences are there?
+
+grep -c "runid=" $reads ## 312189 reads 
+
+cut -f1 phase2hostDepletion_Align2Spruce.paf | sort | uniq | wc -l 
+## 287742 reads got aligned somehow, even if badly, out of , or 
+287742/312189 ## = 92% aligned to host
+312189 - 287742 ## = 24447 reads not aligned at all
+
+python3
+import pandas as pd
+from Bio import SeqIO
+import os
+
+pafHeaders=[ "QueryName","QueryLength","QueryStart","QueryEnd","RelativeStrand",
+"TargetName","TargeLength","TargetStart","TargetEnd",
+"ResidueMatches","AlignmentBlockLngth","MappingQuality"]
+
+aa=pd.read_csv("phase2hostDepletion_Align2Spruce.tsv", sep="\t", names=pafHeaders)
+
+aa.head()
+aa.tail()
+
+aa['MappingQuality'].max() ##60
+aa['MappingQuality'].min() ##0
+aa['MappingQuality'].mean() ## 23
+
+bb = aa.groupby('QueryName')['MappingQuality'].max()
+filter = bb < 10 
+cc = bb[filter].index.to_list()
+len(cc) ## 6345
+
+## get these sequences:
+poorMatches = []
+for seqRec in SeqIO.parse("phase2hostDepletion_noUnblocked.fastq", "fastq"):
+    print(seqRec.id)
+    if seqRec.id in cc: 
+      poorMatches.append(seqRec)
+
+readsInAlignment = aa['QueryName'].unique().tolist()
+notInAlignment = []; a=0; b=312189; c=0;
+for seqRec in SeqIO.parse("phase2hostDepletion_noUnblocked.fastq", "fastq"):
+    a+=1; print(f'{a} records checked out of {b} records in fastq file')
+    if seqRec.id not in readsInAlignment: 
+      c+=1; print(f'found another read not in the alignment: {c} reads written out')
+      notInAlignment.append(seqRec)
+
+len(poorMatches) ## 6345
+len(notInAlignment) ## 24447, matches above number
+
+poorOrExluded = poorMatches + notInAlignment
+
+## write these out as a fasta:
+SeqIO.write(poorOrExluded, "phase2hostDepletion_noUnblocked_notAligned.fastq", "fastq")
+
+## stopped here on friday Dec15
+## phase3:
+cd /media/vol1/daniel/hostDepletion/phase3bacterialEnrichment
+sprucemmi=/media/vol1/daniel/hostDepletion/pabiesFullGenome.mmi
+reads=phase3bacterialEnrichment_noUnblocked.fastq
+
+nohup minimap2 \
+  -I100g \
+  -t 6 \
+  -x map-ont \
+  --secondary=no \
+  $sprucemmi $reads \
+  1> phase3bacterialEnrichment_Align2Spruce.paf \
+  2> phase3bacterialEnrichment_Align2Spruce.paf.log &
+
+wc -l phase3bacterialEnrichment_Align2Spruce.paf
+
+## check numbers
+grep -c "runid=" $reads ## 341025 reads from control 
+cut -f1 phase3bacterialEnrichment_Align2Spruce.paf | sort | uniq | wc -l 
+
+## 265926 reads got aligned somehow, even if badly
+265926/341025 ## = 77% aligned to host
+341025 - 265926 ## 75,099 reads not aligned at all
 
 ## 3. try metagenome assembly, pooled and separate
+
