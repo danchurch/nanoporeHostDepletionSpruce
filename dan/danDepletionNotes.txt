@@ -5353,7 +5353,6 @@ poorOrExluded = poorMatches + notInAlignment
 ## write these out as a fasta:
 SeqIO.write(poorOrExluded, "phase2hostDepletion_noUnblocked_notAligned.fastq", "fastq")
 
-## stopped here on friday Dec15
 ## phase3:
 cd /media/vol1/daniel/hostDepletion/phase3bacterialEnrichment
 sprucemmi=/media/vol1/daniel/hostDepletion/pabiesFullGenome.mmi
@@ -5378,5 +5377,239 @@ cut -f1 phase3bacterialEnrichment_Align2Spruce.paf | sort | uniq | wc -l
 265926/341025 ## = 77% aligned to host
 341025 - 265926 ## 75,099 reads not aligned at all
 
+##   
+cut -f13- --complement phase3bacterialEnrichment_Align2Spruce.paf > phase3bacterialEnrichment_Align2Spruce.tsv
+
+wc -l phase3bacterialEnrichment_Align2Spruce.tsv  ## 1,660,192 alignments
+
+python3
+import pandas as pd
+from Bio import SeqIO
+import os
+
+pafHeaders=[ "QueryName","QueryLength","QueryStart","QueryEnd","RelativeStrand",
+"TargetName","TargeLength","TargetStart","TargetEnd",
+"ResidueMatches","AlignmentBlockLngth","MappingQuality"]
+
+aa=pd.read_csv("phase3bacterialEnrichment_Align2Spruce.tsv", sep="\t", names=pafHeaders)
+
+aa['MappingQuality'].max() ##60
+aa['MappingQuality'].min() ##0
+aa['MappingQuality'].mean() ## 18.9
+
+bb = aa.groupby('QueryName')['MappingQuality'].max()
+filter = bb < 10 
+cc = bb[filter].index.to_list()
+len(cc) ## 35329, a lot
+
+## get these sequences:
+poorMatches = []
+for seqRec in SeqIO.parse("phase3bacterialEnrichment_noUnblocked.fastq", "fastq"):
+    print(seqRec.id)
+    if seqRec.id in cc: 
+      poorMatches.append(seqRec)
+
+## not run ## 
+readsInAlignment = aa['QueryName'].unique().tolist()
+notInAlignment = []; a=0; b=312189; c=0;
+for seqRec in SeqIO.parse("phase3bacterialEnrichment_noUnblocked.fastq", "fastq"):
+    a+=1; print(f'{a} records checked out of {b} records in fastq file')
+    if seqRec.id not in readsInAlignment: 
+      c+=1; print(f'found another read not in the alignment: {c} reads written out')
+      notInAlignment.append(seqRec)
+
 ## 3. try metagenome assembly, pooled and separate
+len(poorMatches) ## 35,329
+len(notInAlignment) ## 75,099 matches above
+poorOrExluded = poorMatches + notInAlignment
+
+## write these out as a fasta:
+SeqIO.write(poorOrExluded, "phase3bacterialEnrichment_noUnblocked_notAligned.fastq", "fastq")
+## 110,428
+
+## 
+grep -c "runid=" phase1control/phase1control_notAligned.fastq ## 17032/310832  ~5% reads
+
+grep -c "runid=" phase2hostDepletion/phase2hostDepletion_noUnblocked_notAligned.fastq 
+## 30792/587477 ## 5% of all passed reads, including unblocked reads
+## 30792/312189 of ## ~10% of passed reads, excluding unblocked
+## so host-depletion doubled the number of reads that don't align to host
+
+grep -c "runid=" phase3bacterialEnrichment/phase3bacterialEnrichment_noUnblocked_notAligned.fastq 
+## 110428/341025 32% of reads don't align well to host 
+## so enriching of targeted bacteria increased our non-aligned 
+## reads quite a lot
+
+## so, now try assembly:
+conda create -n flye_env -c bioconda flye
+
+conda activate flye_env
+
+## metagenome for control:
+
+cd /media/vol1/daniel/hostDepletion/phase1control
+reads=/media/vol1/daniel/hostDepletion/phase1control/phase1control_notAligned.fastq
+outdir=/media/vol1/daniel/hostDepletion/phase1control/metagenomeAssembly
+nohup flye --meta \
+    --threads 8 \
+    --out-dir $outdir \
+    --nano-hq $reads 
+
+## this results in one contig, ~3500 bp long, that blasts to E. coli.
+
+cd /media/vol1/daniel/hostDepletion/phase2hostDepletion
+reads=/media/vol1/daniel/hostDepletion/phase2hostDepletion/phase2hostDepletion_noUnblocked_notAligned.fastq
+outdir=/media/vol1/daniel/hostDepletion/phase2hostDepletion/metagenomeAssembly/
+nohup flye --meta \
+    --threads 8 \
+    --out-dir $outdir \
+    --nano-hq $reads &
+
+## results in 7 contigs, N50 = 8000
+## largest one is 9533, wonder if any of these are the 
+## the same as the one we see in the control?:
+
+## using a seq from control metagenomes:
+
+seq=TGAACATAAAAG
+grep $seq assembly.fasta
+## don't find it.
+
+cd /media/vol1/daniel/hostDepletion/phase3bacterialEnrichment
+reads=/media/vol1/daniel/hostDepletion/phase3bacterialEnrichment/phase3bacterialEnrichment_noUnblocked_notAligned.fastq
+outdir=/media/vol1/daniel/hostDepletion/phase3bacterialEnrichment/metagenomeAssembly
+nohup flye --meta \
+    --threads 8 \
+    --out-dir $outdir \
+    --nano-hq $reads &
+
+## compare all these:
+phase1Ass=/media/vol1/daniel/hostDepletion/phase1control/metagenomeAssembly/assembly.fasta
+phase2Ass=/media/vol1/daniel/hostDepletion/phase2hostDepletion/metagenomeAssembly/assembly.fasta
+phase3Ass=/media/vol1/daniel/hostDepletion/phase3bacterialEnrichment/metagenomeAssembly/assembly.fasta
+
+ls -lh $phase1Ass &&
+ls -lh $phase2Ass &&
+ls -lh $phase3Ass
+
+## weird. Even though we have much higher abundances of 
+## non-aligned reads in our phase3bactEnrich phase,
+## our assembly goes back to one contig of roughly the 
+## same size as before (3500 bp) as in the control. We have 
+## this also blasts to something from the E. coli genome
+## a lot of covereage of this contig, though, =11,141
+
+## is it the same sequence? take a line from the control contig:
+seq=GCAGGAGTTTTCCGATGGGTTACAAATATCCATGAACATAAAAGATATTACTATACCTTT
+grep $seq assembly.fasta ## yup it's in there
+## this is again a large piece of the E. coli/Shigella 
+## genome
+
+## how many of our reads are just repeates of this?
+cd /media/vol1/daniel/hostDepletion/phase3bacterialEnrichment
+#seq=GCAGGAGTTTTCCGATGGGTTACAAATATCCATGAACATAAAAGATATTACTATACCTTT
+#seq=TGAACATAAAAGATATTACTATACCTTT
+seq=CATAAAAGAT
+grep -c $seq phase3bacterialEnrichment_noUnblocked_notAligned.fastq 
+## maybe 8000 out of ~110,000  reads, lines up with the coverage 
+## of 11,000 reported by metaflye for this single contig.
+
+## weird. so what do we do with this? 
+## don't want to get lost here...
+
+## maybe we simply concat, run a gene predictor, and 
+## send it off to keg, without a assembly?
+
+## how big are our files?
+
+phase1noA=/media/vol1/daniel/hostDepletion/phase1control/phase1control_notAligned.fastq
+phase2noA=/media/vol1/daniel/hostDepletion/phase2hostDepletion/phase2hostDepletion_noUnblocked_notAligned.fastq
+phase3noA=/media/vol1/daniel/hostDepletion/phase3bacterialEnrichment/phase3bacterialEnrichment_noUnblocked_notAligned.fastq
+
+grep -c "runid=" $phase1noA ##  17032
+grep -c "runid=" $phase2noA ##  30792
+grep -c "runid=" $phase3noA ## 110428
+
+## we need something to report besides number of
+## unaligned reads. 
+
+## maybe some of these reads are long enough, and
+## good enough, to get some gene predictions:
+
+## try prodigal:
+
+cd /media/vol1/daniel/hostDepletion/phase1control/
+mkdir rawReadGenePred
+
+## fasta
+seqtk seq -A phase1control_notAligned.fastq > phase1control_notAligned.fasta
+## simplify headers
+sed -i "s/runid=.*$//g" phase1control_notAligned.fasta 
+
+## phase1 predictions
+cd /media/vol1/daniel/hostDepletion/phase1control/rawReadGenePred
+reads=/media/vol1/daniel/hostDepletion/phase1control/phase1control_notAligned.fasta
+trial=phase1control
+prodigal \
+  -a $trial".genes.faa" \
+  -d $trial".genes.fna" \
+  -f gff \
+  -o $trial".genes.gff" \
+  -i $reads
+
+grep -c "^>" phase1control.genes.fna ##33467
+
+## phase2 predictions
+cd /media/vol1/daniel/hostDepletion/phase2hostDepletion/ 
+mkdir rawReadGenePred
+
+cd /media/vol1/daniel/hostDepletion/phase2hostDepletion/rawReadGenePred
+reads=/media/vol1/daniel/hostDepletion/phase2hostDepletion/phase2hostDepletion_noUnblocked_notAligned.fasta
+trial=phase2hostDepletion
+prodigal \
+  -a $trial".genes.faa" \
+  -d $trial".genes.fna" \
+  -f gff \
+  -o $trial".genes.gff" \
+  -i $reads
+
+grep -c "^>" phase2hostDepletion.genes.fna ##67985
+
+## phase3 predictions
+
+cd /media/vol1/daniel/hostDepletion/phase3bacterialEnrichment  
+mkdir rawReadGenePred
+
+## fasta
+seqtk seq -A phase3bacterialEnrichment_noUnblocked_notAligned.fastq > phase3bacterialEnrichment_noUnblocked_notAligned.fasta
+## simplify headers
+sed -i "s/runid=.*$//g" phase3bacterialEnrichment_noUnblocked_notAligned.fasta
+
+cd /media/vol1/daniel/hostDepletion/phase3bacterialEnrichment/rawReadGenePred
+reads=/media/vol1/daniel/hostDepletion/phase3bacterialEnrichment/phase3bacterialEnrichment_noUnblocked_notAligned.fasta
+trial=phase3bacterialEnrichment
+prodigal \
+  -a $trial".genes.faa" \
+  -d $trial".genes.fna" \
+  -f gff \
+  -o $trial".genes.gff" \
+  -i $reads
+
+grep -c "^>" phase3bacterialEnrichment.genes.fna ##156,852
+
+## these should all be of sufficient size to submit to 
+## ghostkoala.
+
+## on local:
+#cd /home/daniel/Documents/projects/fichtelgebirge_project/spruceGenome/depletion2big4github/fastqc_experiment_spruce_threephase/phase1_control
+#file=/media/vol1/daniel/hostDepletion/phase1control/rawReadGenePred/phase1control.genes.faa
+#cd /home/daniel/Documents/projects/fichtelgebirge_project/spruceGenome/depletion2big4github/fastqc_experiment_spruce_threephase/phase2_depletion
+#file=/media/vol1/daniel/hostDepletion/phase2hostDepletion/rawReadGenePred/phase2hostDepletion.genes.faa
+
+cd /home/daniel/Documents/projects/fichtelgebirge_project/spruceGenome/depletion2big4github/fastqc_experiment_spruce_threephase/phase3_enrichment
+file=/media/vol1/daniel/hostDepletion/phase3bacterialEnrichment/rawReadGenePred/phase3bacterialEnrichment.genes.faa
+scp test@132.180.112.115:$file . 
+
+## the first "metagenome" is sent to ghost koala, from phase1control.
+
 
