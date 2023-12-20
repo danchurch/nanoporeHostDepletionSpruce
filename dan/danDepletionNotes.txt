@@ -5557,7 +5557,7 @@ prodigal \
   -o $trial".genes.gff" \
   -i $reads
 
-grep -c "^>" phase1control.genes.fna ##33467
+grep -c "^>" phase1control.genes.fna ##33,467 gene predictions, from 17,032 reads
 
 ## phase2 predictions
 cd /media/vol1/daniel/hostDepletion/phase2hostDepletion/ 
@@ -5573,7 +5573,7 @@ prodigal \
   -o $trial".genes.gff" \
   -i $reads
 
-grep -c "^>" phase2hostDepletion.genes.fna ##67985
+grep -c "^>" phase2hostDepletion.genes.fna ##67,985 from 30,792 reads
 
 ## phase3 predictions
 
@@ -5595,8 +5595,7 @@ prodigal \
   -o $trial".genes.gff" \
   -i $reads
 
-grep -c "^>" phase3bacterialEnrichment.genes.fna ##156,852
-
+grep -c "^>" phase3bacterialEnrichment.genes.fna ##156,852 from 110,428 reads
 ## these should all be of sufficient size to submit to 
 ## ghostkoala.
 
@@ -5610,6 +5609,132 @@ cd /home/daniel/Documents/projects/fichtelgebirge_project/spruceGenome/depletion
 file=/media/vol1/daniel/hostDepletion/phase3bacterialEnrichment/rawReadGenePred/phase3bacterialEnrichment.genes.faa
 scp test@132.180.112.115:$file . 
 
-## the first "metagenome" is sent to ghost koala, from phase1control.
+## the first and second "metagenomes" are sent to ghost koala, from phase1 and 2
+## tonight the third?
 
+## can we combine them?:
+
+## on local:
+cd /home/daniel/Documents/projects/fichtelgebirge_project/spruceGenome/depletion2big4github/fastqc_experiment_spruce_threephase
+
+cat \
+phase1_control/phase1control.genes.faa \
+phase2_depletion/phase2hostDepletion.genes.faa \
+phase3_enrichment/phase3bacterialEnrichment.genes.faa > genePredsAllPhases.faa
+
+## still only 258304 reads, 57M. Should be fine.
+## also ran it with Eukaryote annotation requested
+
+## we also need the nucleic acid sequences for these 
+## gene predictions:
+
+#file=/media/vol1/daniel/hostDepletion/phase1control/rawReadGenePred/phase1control.genes.fna
+#file=/media/vol1/daniel/hostDepletion/phase2hostDepletion/rawReadGenePred/phase2hostDepletion.genes.fna
+file=/media/vol1/daniel/hostDepletion/phase3bacterialEnrichment/rawReadGenePred/phase3bacterialEnrichment.genes.fna
+scp test@132.180.112.115:$file . 
+
+
+cd /home/daniel/Documents/projects/fichtelgebirge_project/spruceGenome/depletion2big4github/fastqc_experiment_spruce_threephase
+
+cat \
+phase1_control/phase1control.genes.fna \
+phase2_depletion/phase2hostDepletion.genes.fna \
+phase3_enrichment/phase3bacterialEnrichment.genes.fna > genePredsAllPhases.fna
+ 
+## antismash
+
+## check these using antismash
+## one-at-a-time, then combined
+## using "loose" settings
+## start with their bacteria database 
+## try fungal if there is time and their server 
+## isn't too busy.
+
+## just phase1 yields a single antismash result
+## a terpene BGC, in the hopane/squalene pathway
+## so some sort of steroid or tri-terpene for
+## membranes, probably.
+
+## phase 2 yields one BGC also - a phytoene synthase 
+## in a terpene BGC
+## also looks like it is in a squalene pathway
+
+## phase 3 no results. Weird
+
+## allReads shows 2 matches, the terpene-related one
+## and a fatty acid synthesis related one.
+
+## a quick search for fungal biosynthesis genes shows
+## a fatty acid BGC, but not worth falling down that
+## rabbit hole. 
+
+## in general not really useful to report...it was worth a shot.
+
+## end antismash
+
+### nested circle plot for grant app ###
+
+## let's make a diagram of the relative numbers
+## of unaligned-to-spruce for each stage of
+## the experiment. 
+
+## we have
+
+
+## but it might be more fun to code this in d3js?
+## meh time
+
+## really, we just want some proportionatly sized circles,
+## do the rest in inkscape
+
+python3
+import matplotlib.pyplot as plt; plt.ion()
+import pandas as pd
+import os, math
+from matplotlib.collections import PatchCollection
+
+## we want a dataframe with the following:
+colNames = ["phase", "passedReads", "fullySeqenced", "unaligned2host","unaligned%", "predictedGenes", "keggModulesCompleted"] 
+phase=["phase1control","phase2deplete","phase3enrich"]
+passedReads = pd.Series([310832, 587477, 3283905], name="passedReads", index=phase)
+fullySeqenced = pd.Series([310832, 312189, 341025], name="fullySeqenced", index=phase)
+unaligned2host = pd.Series([17032, 30792, 110428], name="unaligned2host", index=phase)
+unalignedProportion = unaligned2host / fullySeqenced
+unalignedProportion.name = "unalignedProportion"
+predictedGenes = pd.Series([33467,67985,156852],name="predictedGenes", index=phase)
+keggModulesCompleted = pd.Series([12,48,32],name="keggModulesCompleted", index=phase)
+threePhaseSummary = pd.concat([passedReads,fullySeqenced,unaligned2host,
+                unalignedProportion,predictedGenes,keggModulesCompleted],
+                axis=1)
+
+threePhaseSummary["genesPerRead"] = threePhaseSummary["predictedGenes"] / threePhaseSummary["unaligned2host"]
+
+threePhaseSummary.head()
+
+threePhaseSummary.to_csv("threePhaseSummary.csv")
+
+## and now, we want circles that reflect the % of unaligned reads
+
+## to make the right size circles?:
+
+## a good bit of script to be found here
+https://stackoverflow.com/questions/59266060/how-to-do-a-nested-proportional-area-chart-circles
+
+## make a set of circles using our percentages
+threePhaseSummary["unalignedProportion"]
+
+areas = (threePhaseSummary["unalignedProportion"]
+        .to_list() + [1])
+radius = [ math.sqrt(A/math.pi) for A in areas ]
+
+p = [plt.Circle((0,r), radius=r) for r in radius]
+
+coll = PatchCollection(p[::-1])
+
+fig, ax = plt.subplots(1,1)
+ax.add_collection(coll)
+#ax.axis("on")
+ax.axis("off")
+ax.set_aspect("equal")
+ax.autoscale()
 
