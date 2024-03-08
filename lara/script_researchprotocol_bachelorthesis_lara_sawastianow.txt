@@ -1,0 +1,1807 @@
+################# Protocol #################
+
+
+### conda
+## The conda version 23.5.2 was downloaded and installed using the following commands 
+## It is also necessary to make the installer executable by running the chmod command
+
+wget https://repo.anaconda.com/archive/Anaconda3-2023.07-1-Linux-x86_64.sh
+
+chmod 777 Anaconda3-2023.07-1-Linux-x86_64.sh
+
+./Anaconda3-2023.07-1-Linux-x86_64.sh
+
+
+### readfish
+## readfish was installed via conda by creating the configuration file readfish_env.yml with the following contents
+
+touch readfish_env.yml
+
+""
+name: readfish
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.8
+  - pip
+  - pip:
+    - git+https://github.com/nanoporetech/read_until_api@v3.4.1
+    - ont-pyguppy-client-lib==6.4.2
+    - git+https://github.com/LooseLab/readfish@dev_staging
+""
+
+
+## The readfish environment was then created and activated by conda through running the following commands
+
+conda env create -f readfish_env.yml
+
+conda activate readfish
+
+
+### Guppy
+## to establish the connection to the basecaller Guppy, first the configuration argument for Guppy had to be changed with an r9 configuration file
+## this was done in the settings of the guppyd service file, where the settings for the "ExecStart=" field under "[Service]" were changed
+
+vim /lib/systemd/system/guppyd.service
+
+""
+ExecStart=/opt/ont/guppy/bin/guppy_basecall_server --log_path /var/log/guppy --config dna_r9.4.1_450bps_fast.cfg --num_callers 1 --port /tmp/.guppy/5555 --ipc_threads 3 --device cuda:all
+""
+
+
+## after the configuration file was changed, the units of the Guppy daemon service had to be reloaded and then restarted with the following commands
+
+sudo systemctl daemon-reload
+
+sudo systemctl restart guppyd
+
+
+## it was also necessary to reboot the computer after the restart 
+## Furthermore, it was important to get permission to the path of the port, which was achieved with the chmod command
+
+sudo chmod 775 /tmp/.guppy/5555
+
+
+## The connection to Guppy was then checked with the following command
+
+python -c 'from pyguppy_client_lib.pyclient import PyGuppyClient as PGC; \
+           c = PGC("ipc:///tmp/.guppy/5555", "dna_r9.4.1_450bps_fast.cfg"); \
+           c.connect(); print(c)'
+
+
+##  in the first phase of testing, readfish scripts were tested within a tutorial script created by Loose lab
+##  simulation, playback experiment with human genome
+
+
+## download referenz: bulk-FAST5 file of a typical human genome sample was downloaded from the internet
+
+wget https://s3.amazonaws.com/nanopore-human-wgs/bulkfile/PLSP57501_20170308_FNFAF14035_MN16458_sequencing_run_NOTT_Hum_wh1rs2_60428.fast5
+
+
+### sequencing TOML files
+## add a simulation field in the [custom settings] 
+## set the parameter break_reads_after_seconds = 1.0 to break_reads_after_seconds = 0.4
+
+vim /opt/ont/minknow/conf/package/sequencing/sequencing_MIN106_DNA.toml
+
+""
+simulation = "/media/vol1/daniel/hostDepletion/sampleBulk.fast5"
+""
+
+
+### readfish TOML file
+
+## the sequence alignment program minimap2 was installed via conda
+## an index of the human genome was generated. The file hg38.fa in FASTA format was used for this and saved as Memory Map Information (MMI) file (named hg38.mmi) with the command option -d
+
+conda install -c bioconda minimap2
+
+minimap2 -d hg38.mmi hg38.fa
+
+
+## the following TOML file was configured 
+
+touch human_chr_selection.toml
+
+""
+[caller_settings]
+config_name = "dna_r9.4.1_450bps_fast"
+host = "ipc://tmp/.guppy/"
+port = 5555
+
+[conditions]
+reference = "/media/vol2/lara/simulation/hg38.mmi"
+
+[conditions.0]
+name = "select_chr_21_22"
+control " false
+min_chunks = 0 
+max_chunks = 12
+targets = ["chr20", "chr21"]
+single_on = "stop_receiving"
+multi_on = "stop_receiving" 
+single_off = "unblock"        
+multi_off = "unblock"         
+no_seq = "proceed"
+no_map = "proceed"
+""
+
+
+## activate readfish environment
+
+conda activate readfish
+
+
+## check if the toml will drive an experiment
+
+readfish validate human_chr_selection.toml
+
+
+## first the "unblock" response was tested. After the playback sequencing run was started via the MinKNOW GUI the following command was performed
+
+readfish unblock-all --device MN40608 --experiment-name "Testing ReadFish Unblock All"
+
+
+## to track the basecalling and mapping times, a new playback sequencing run was started via the MinKNOW GUI and the readfish "targets" script was applied in the environment
+## before the script was applied, the corresponding TOML file had to be validated
+
+readfish validate human_chr_selection.toml
+
+readfish targets --device MN40608 \
+              --experiment-name "RU Test basecall and map" \
+              --toml /media/vol2/lara/simulation/human_chr_selection.toml \
+              --log-file ru_test.log
+		
+
+## after terminating the applied readfish script and the sequencing run, summary statistics can be accessed with the readfish "summary" command
+## as this command accesses the collected reads, the path that leads to this read data followed by the path to the TOML file used must be specified. Both paths were previously indexed and then added to the readfish "summary" command
+
+TOML="/media/vol2/lara/simulation/human_chr_selection.toml"
+
+reads="/var/lib/minknow/data/debugging_240823_1/basecalling_01"
+
+readfish summary $TOML $reads
+
+
+## in the second phase of testing, different readfish TOML configurations were tested
+## simulation, with the human genome as reference,  chromosome 21 and 22 were specified as the target in the TOML
+
+## with the first experimental type, the "on" parameters in the mapping conditions were changed from "stop_receiving" to "unblock" (all reads that map to the target and also those that do not map should be blocked and ejected from the pore)
+## TOML
+
+touch human_chr_selection_stop2unblock.toml
+
+""
+[caller_settings]
+config_name = "dna_r9.4.1_450bps_hac"
+host = "ipc:///tmp/.guppy/"
+port = 5555
+
+[conditions]
+reference = "/media/vol2/lara/simulation/hg38.mmi"
+
+[conditions.0]
+name = "select_chr_21_22_stop2unblock"
+control = false
+min_chunks = 0
+max_chunks = inf
+targets = ["chr21", "chr22"]
+single_on = "unblock"
+multi_on = "unblock"
+single_off = "unblock"
+multi_off = "unblock"
+no_seq = "proceed"
+no_map = "proceed"
+""
+
+
+## start sequencing run and apply the "targets" script, validation of TOML
+
+readfish validate human_chr_selection_stop2unblock.toml
+
+readfish targets --device MN40608 \
+              --experiment-name "stop_receive2unblock" \
+              --toml /media/vol2/lara/simulation/human_chr_selection_stop2unblock.toml \
+              --log-file ru_test.log
+
+
+## check the results wit "summary" command after 15 min, index the path
+
+TOML="/media/vol2/lara/simulation/human_chr_selection_stop2unblock.toml"
+
+reads="/var/lib/minknow/data/debugging_240823_1/toml_file_1/20230824_1309_MN40608_debugging_240823_b3ab4efe"
+
+readfish summary $TOML $reads
+
+
+## with the second experimental type the target depletion
+## TOML
+
+touch human_chr_deplete21_22.toml
+
+""
+[caller_settings]
+config_name = "dna_r9.4.1_450bps_hac"
+host = "ipc:///tmp/.guppy/"
+port = 5555
+
+[conditions]
+reference = "/media/vol2/lara/simulation/hg38.mmi"
+
+[conditions.0]
+name = "deplete_chr_21_22"
+control = false
+min_chunks = 0
+max_chunks = inf
+targets = ["chr21", "chr22"]
+single_on = "unblock"
+multi_on = "unblock"
+single_off = "stop_receiving"
+multi_off = "stop_receiving"
+no_seq = "proceed"
+no_map = "proceed"
+""
+
+
+## start sequencing run and apply the "targets" script, validation of TOML
+
+readfish validate human_chr_deplete21_22.toml
+
+readfish targets --device MN40608 \
+              --experiment-name "deplete21_22" \
+              --toml /media/vol2/lara/simulation/human_chr_deplete21_22.toml \
+              --log-file ru_test.log
+
+
+## results after 15 min with "summary" command, index the path
+
+TOML="/media/vol2/lara/simulation/human_chr_deplete21_22.toml"
+
+reads="/var/lib/minknow/data/debugging_240823_1/toml_file_2/20230824_1415_MN40608_debugging_240823_febe2fba"
+
+readfish summary $TOML $reads
+
+
+## third experimental type, host depletion
+## TOML
+
+touch human_chr_depleteEntireGenome.toml
+
+""
+[caller_settings]
+config_name = "dna_r9.4.1_450bps_hac"
+host = "ipc:///tmp/.guppy/"
+port = 5555
+
+[conditions]
+reference = "/media/vol2/lara/simulation/hg38.mmi"
+
+[conditions.0]
+name = "deplete_genome"
+control = false
+min_chunks = 0
+max_chunks = inf
+targets = []
+single_on = "unblock"
+multi_on = "unblock"
+single_off = "unblock"
+multi_off = "unblock"
+no_seq = "proceed"
+no_map = "stop_receiving"
+""
+
+
+## start sequencing run and apply the "targets" script, validation of TOML
+
+readfish validate human_chr_depleteEntireGenome.toml
+
+readfish targets --device MN40608 \
+              --experiment-name "deplete_humanGenome" \
+              --toml human_chr_depleteEntireGenome.toml \
+              --log-file ru_test.log
+			  
+			  
+## results after 15 min with "summary" command, index the path
+
+TOML="/media/vol2/lara/simulation/human_chr_depleteEntireGenome.toml"
+
+reads="/var/lib/minknow/data/debugging_240823_1/toml_file_2/20230824_1415_MN40608_debugging_240823_febe2fba"
+
+readfish summary $TOML $reads
+
+
+
+## second phase of testing with spruce genome as reference
+
+### Guppy
+
+vim /lib/systemd/system/guppyd.service
+
+ExecStart=/opt/ont/guppy/bin/guppy_basecall_server --log_path /var/log/guppy --config dna_r10.4.1_e8.2_400bps_fast.cfg --num_callers 1 --port /tmp/.guppy/5555 --ipc_threads 3 --device cuda:all
+
+sudo systemctl daemon-reload
+
+sudo systemctl restart guppyd
+
+sudo chmod 775 /tmp/.guppy/5555
+
+
+## check connection
+
+python -c 'from pyguppy_client_lib.pyclient import PyGuppyClient as PGC; \
+           c = PGC("ipc:///tmp/.guppy/5555", "dna_r10.4.1_e8.2_400bps_fast.cfg"); \
+           c.connect(); print(c)'
+		   
+
+## bulk fast5 file & mmi file was provided
+## sequencing TOML file, change the "simulation" line to match your new bulk fast5 file 
+
+vim /opt/ont/minknow/conf/package/sequencing/sequencing_MIN114_DNA_e8_2_400K.toml
+
+""
+simulation= “/media/vol2/lara/simulation/realdata/spruceSimulation.fast5” 
+""
+
+
+### readfish TOML file
+
+touch spruce_chloroplastEnrichment.toml
+
+""
+[caller_settings]
+config_name = "dna_r10.4.1_e8.2_400bps_fast.cfg"
+host = "ipc:///tmp/.guppy/"
+port = 5555
+
+[conditions]
+reference = "/media/vol2/lara/simulation/realdata/PabiesGenome_repeatsCompressed_mt_ch.mmi"
+
+[conditions.0]
+name = "enrichChloroplast"
+control = false
+min_chunks = 0
+max_chunks = inf
+targets = ["chloroplast"]
+single_on = "stop_receiving"
+multi_on = "stop_receiving"
+single_off = "unblock"
+multi_off = "unblock"
+no_seq = "proceed"
+no_map = "proceed"
+""
+
+
+## activate readfish environment
+
+conda activate readfish
+
+
+## check if the toml will drive an experiment
+
+readfish validate spruce_chloroplastEnrichment.toml
+
+
+## start the experiment via MinKNOW
+
+readfish targets --device MN40608 \
+              --experiment-name "enrichChloroplast" \
+              --toml spruce_chloroplastEnrichment.toml \
+              --log-file chloro_test.log
+
+
+## results that were tried to be called with the readfish summary script were empty
+
+
+
+
+
+
+
+
+
+
+
+
+################# Bachelor thesis #################
+
+
+### Guppy ###
+## To update the default guppyd (basecaller/server) to a different kind of flow cell, when working remotely (like with readfish, etc) I had to update the config file for the guppyd daemon
+
+vim /lib/systemd/system/guppyd.service
+
+""
+ExecStart=/opt/ont/guppy/bin/guppy_basecall_server --log_path /var/log/guppy --config dna_r10.4.1_e8.2_400bps_fast.cfg --num_callers 1 --port /tmp/.guppy/5555 --ipc_threads 3 --device cuda:al
+""
+
+
+## restart the daemon
+
+sudo systemctl daemon-reload
+
+sudo systemctl restart guppyd
+
+sudo chmod 775 /tmp/.guppy/5555
+
+
+## check connection
+
+python -c 'from pyguppy_client_lib.pyclient import PyGuppyClient as PGC; \
+           c = PGC("ipc:///tmp/.guppy/5555", "dna_r10.4.1_e8.2_400bps_fast.cfg"); \
+           c.connect(); print(c)'
+
+
+## check the sequencing TOML file to see if it still contains a simulation line, that has to be commented out
+
+vim /opt/ont/minknow/conf/package/sequencing/sequencing_MIN114_DNA_e8_2_400K.toml
+
+
+
+### start experiment (phase 1) via MinKNOW ###
+
+
+
+### adaptive sampling via readfish (phase 2 & 3) ###
+
+### mmi file
+## index the path of the reference genome
+
+genome=/media/vol2/lara/3phaseSpruce/Pabies_compressedGenome.fa
+
+
+## create a mmi
+
+minimap2 -d PabiesGenome_repeatsCompressed_mt_ch.mmi $genome
+
+
+
+### Phase 2: host depletion ###
+
+## create a readfish TOML
+
+touch hostDepletion3phase_phase2.toml
+
+""
+[caller_settings]
+config_name = "dna_r10.4.1_e8.2_400bps_fast.cfg"
+host = "ipc:///tmp/.guppy/"
+port = 5555
+
+[conditions]
+reference = "/media/vol2/lara/3phaseSpruce/PabiesGenome_repeatsCompressed_mt_ch.mmi"
+
+[conditions.0]
+name = "deplete_spruce_host"
+control = false
+min_chunks = 0
+max_chunks = 3
+targets = []
+single_on = "unblock"
+multi_on = "unblock"
+single_off = "unblock"
+multi_off = "unblock"
+no_seq = "proceed"
+no_map = "stop_receiving"
+""
+
+
+## application of readfish scripts to running sequencing for depletion
+## first check if the toml will drive an experiment
+
+readfish validate hostDepletion3phase_phase2.toml
+
+
+## start depletion with targets command
+
+readfish targets --device MN40608 \
+              --experiment-name "hostDepletion3phase" \
+              --toml hostDepletion3phase_phase2.toml \
+              --log-file hostDepletion3phase_phase2.log
+
+
+
+### get 20 bacterial genomes ###
+
+## 20 bacterial genomes that had the most reads in the first two phases are filtered out for the enrichment phase
+## on deNBI
+
+## 1. minimap alignment of phase 1 & 2 passed reads to host (mmi), to remove uncertain reads
+
+## transfer the phase1 and phase2 passed reads from labcomp to deNBI
+
+scp -rP 30419 -i ~/.ssh/lab2denbi /var/lib/minknow/data/experiment_spruce_threephase/controll_130923/20230913_1355_MN40608_FAX46654_83018e78/phase1control.tar ubuntu@129.70.51.6:/mnt/ephem/look4bact3phase/phase1control
+
+scp -rP 30419 -i ~/.ssh/lab2denbi /var/lib/minknow/data/experiment_spruce_threephase/phase2hostDepletion/20230913_2238_MN40608_FAX46654_d4c9fea9/phase2hostDepletion.tar ubuntu@129.70.51.6:/mnt/ephem/look4bact3phase/phase2hostDepletion
+
+
+## extract, decompress, concat these
+
+cd /mnt/ephem/look4bact3phase/phase1control
+
+gunzip *
+
+cat *fastq > phase1controlReads.fastq
+
+gzip *
+
+cd /mnt/ephem/look4bact3phase/phase2hostDepletion
+
+gunzip *
+
+cat *fastq > phase2hostDepletionReads.fastq
+
+gzip *
+
+
+### 1. minimap alignment of phase 1 reads to host
+
+cd /mnt/ephem/look4bact3phase/phase1control
+
+sprucemmi=/vol/piceaNanopore/dan/chrisHostDepletionTrial/spruceRefGenome/Pabies-haploid_withOrganelles.mmi
+reads=/mnt/ephem/look4bact3phase/phase1control/phase1controlReads.fastq
+
+nohup minimap2 \
+    -I100g \
+    --secondary=no \
+    -t 20 \
+    -x map-ont \
+    $sprucemmi $reads 1> phase1control_Align2Spruce.paf 2> phase1control_Align2Spruce.paf.log &
+
+
+### 2. get all the non-alignments/poor matches, because they are possible bacterial reads (& they were written out as fasta)
+## trim the file
+
+cut -f1 phase1control_Align2Spruce.paf | sort | uniq
+
+head -n 3 phase1control_Align2Spruce.paf | cut -f13- --complement  
+
+cut -f13- --complement phase1control_Align2Spruce.paf > phase1control_Align2Spruce.tsv
+
+
+## import this into python
+
+pafHeaders=[ "QueryName","QueryLength","QueryStart","QueryEnd","RelativeStrand",
+"TargetName","TargeLength","TargetStart","TargetEnd",
+"ResidueMatches","AlignmentBlockLngth","MappingQuality"]
+
+aa=pd.read_csv("phase1control_Align2Spruce.tsv", sep="\t", names=pafHeaders)
+
+
+## get the best-scoring alignment to take all the <10 matches
+
+bb = aa.groupby('QueryName')['MappingQuality'].max()
+
+filter = bb < 5 
+
+cc = bb[filter].index.to_list()
+
+aa.set_index('QueryName', inplace=True)
+
+pd.set_option('display.max_rows', None)
+
+pd.reset_option('all')
+
+aa.reset_index(inplace=True)
+
+readsInAlignment = bb.index.to_list()
+
+len(readsInAlignment)
+
+
+## read in the fastq (seqRec)
+
+poorMatches = []
+for seqRec in SeqIO.parse("phase1controlReads.fastq", "fastq"):
+    print(seqRec.id)
+    if seqRec.id in cc: 
+      poorMatches.append(seqRec)
+
+notInAlignment = []
+for seqRec in SeqIO.parse("phase1controlReads.fastq", "fastq"):
+    print(seqRec.id)
+    if seqRec.id not in readsInAlignment: 
+      notInAlignment.append(seqRec)
+	  
+	  
+## add the reads that were left out by minimap
+
+notInAlignment[0]
+
+poorOrExluded = poorMatches + notInAlignment
+
+len(poorOrExluded)
+
+
+## write these out as a fasta:
+
+SeqIO.write(poorOrExluded, "phase1controlReads_notAligned.fasta", "fasta")
+
+
+### 3. blastn alignment against bacteria reference genomes (NCBI)
+
+conda activate blast
+
+bactRefGenome=/vol/piceaNanopore/dan/bactGenomes/allbactGenomes.fa
+phase1unaligned=phase1controlReads_notAligned.fasta
+
+nohup blastn -db $bactRefGenome \
+  -query $phase1unaligned \
+  -num_threads 25 \
+  -num_alignments 3 \
+  -out phase1control_bacterial_alignments.csv \
+  -outfmt 10 &
+  
+  
+## repeat steps with passed reads of phase 2
+### 1. alignment of phase 2 reads to host
+
+cd /mnt/ephem/look4bact3phase/phase2hostDepletion
+
+sprucemmi=/vol/piceaNanopore/dan/chrisHostDepletionTrial/spruceRefGenome/Pabies-haploid_withOrganelles.mmi
+reads=/mnt/ephem/look4bact3phase/phase2hostDepletion/phase2hostDepletionReads.fastq
+
+nohup minimap2 \
+  -I100g \
+  -t 20 \
+  -x map-ont \
+  --secondary=no \
+  $sprucemmi $reads \
+  1> phase2hostDepletion_Align2Spruce.paf \
+  2> phase2hostDepletion_Align2Spruce.paf.log &
+
+
+### 2. get all the non-alignments/poor matches, because they are possible bacterial reads (& they were written out as fasta)
+## trim the file
+
+cut -f13- --complement phase2hostDepletion_Align2Spruce.paf > phase2hostDepletion_Align2Spruce.tsv
+
+head phase2hostDepletion_Align2Spruce.tsv
+
+cut -f1 phase2hostDepletion_Align2Spruce.tsv | sort | uniq
+
+
+## import this into python
+
+pafHeaders=[ "QueryName","QueryLength","QueryStart","QueryEnd","RelativeStrand",
+"TargetName","TargeLength","TargetStart","TargetEnd",
+"ResidueMatches","AlignmentBlockLngth","MappingQuality"]
+
+aa=pd.read_csv("phase2hostDepletion_Align2Spruce.tsv", sep="\t", names=pafHeaders)
+
+
+## get the best-scoring alignment to take all the <10 matches
+
+bb = aa.groupby('QueryName')['MappingQuality'].max()
+
+filter = bb < 5 
+
+cc = bb[filter].index.to_list()
+
+pd.set_option('display.max_rows', None)
+
+aa.set_index('QueryName', inplace=True)
+
+pd.reset_option('all')
+
+aa.reset_index(inplace=True)
+
+readsInAlignment = bb.index.to_list()
+
+
+## read in the fastq (seqRec)
+
+poorMatches = []
+for seqRec in SeqIO.parse("phase2hostDepletionReads.fastq", "fastq"):
+    print(seqRec.id)
+    if seqRec.id in cc: 
+      poorMatches.append(seqRec)
+	  
+readsInAlignment = bb.index.to_list()
+notInAlignment = []; a=0; b=587477; c=0; d=24744
+
+for seqRec in SeqIO.parse("phase2hostDepletionReads.fastq", "fastq"):
+    a+=1; print(f'{a} records checked out of {b} records in fastq file')
+    if seqRec.id not in readsInAlignment: 
+      c+=1; print(f'found another read not in the alignment: {c} reads written out of total {d} reads excluded from alignment to host')
+      notInAlignment.append(seqRec)
+
+
+## add the reads that were left out by minimap
+
+poorOrExluded = poorMatches + notInAlignment
+
+len(poorOrExluded)
+
+
+## write these out as a fasta:
+
+SeqIO.write(poorOrExluded, "phase2hostDepletion_notAligned.fasta", "fasta
+
+
+### 3. blastn alignment against bacteria reference genomes (NCBI)
+
+conda activate blast
+
+cd /mnt/ephem/look4bact3phase/phase2hostDepletion
+
+bactRefGenome=/vol/piceaNanopore/dan/bactGenomes/allbactGenomes.fa
+phase2unaligned=phase2hostDepletion_notAligned.fasta
+
+nohup blastn -db $bactRefGenome \
+  -query $phase2unaligned \
+  -num_threads 25 \
+  -num_alignments 3 \
+  -out phase2hostDepletion_bacterial_alignments.csv \
+  -outfmt 10 &
+
+
+### 4. connect the blast matches to genomes
+
+## connect the accession numbers in this table to their genome:
+  
+bactRefGenome=/vol/piceaNanopore/dan/bactGenomes/allbactGenomes.fa
+
+head -n 30 $bactRefGenome | grep "^>" 
+
+grep "^>" $bactRefGenome > allRefBactHeaders.txt
+ 
+tail allRefBactHeaders.txt | cut -f1-3 -d" " | sed "s/ /,/" |
+sed "s/>//"
+
+cut -f1-3 -d" " allRefBactHeaders.txt | sed "s/ /,/" |
+sed "s/>//" > allRefBactHeaders.csv
+
+grep -c ",$" allRefBactHeaders.csv
+sed -i "s/,$//" allRefBactHeaders.csv
+
+
+## get the species name out of each genome file (via python)
+
+aa = pd.read_csv('allRefBactHeaders.csv', names=['accession', 'sp'])
+
+for i in /mnt/ephem/bactGenomes/refSeq/*; do
+  echo -n $i >> bactRefGenFirstLines.txt
+  sed -n "1p" $i >> bactRefGenFirstLines.txt
+done &
+
+
+## trim 
+
+head bactRefGenFirstLines.txt | cut --complement -f1-5 -d"/" | sed 's/ /\t/'| sed 's/>/\t/'
+tail -n 4 bactRefGenFirstLines.txt | cut --complement -f1-5 -d"/" | sed 's/ /\t/'| sed 's/>/\t/'
+
+cut --complement -f1-5 -d"/" bactRefGenFirstLines.txt | sed 's/ /\t/'| sed 's/>/\t/' > bactRefGenFirstLines.tsv
+
+
+## now use this third column to look for genome files to grab:
+## take the contig name, look for a string match and take the genome name
+
+bactRefGenomes = pd.read_csv('/mnt/ephem/look4bact3phase/bactRefGenFirstLines.tsv', names=['filename','accession', 'sp'], sep='\t')
+
+## for phase 1:
+
+/mnt/ephem/look4bact3phase/phase1control/phase1control_bacterial_alignments.csv
+
+head=[ 'qseqid','sseqid','pident','length','mismatch',
+  'gapopen','qstart','qend','sstart','send','evalue','bitscore' ]
+phase1aligns=pd.read_csv("/mnt/ephem/look4bact3phase/phase1control/phase1control_bacterial_alignments.csv", names=head)
+
+pd.set_option('display.max_rows', None)
+
+pd.reset_option('all')
+
+phase1bactContigs=pd.Series(phase1aligns['sseqid'].unique())
+
+pd.set_option('display.max_rows', None)
+
+bactRefGenomes['accession']
+
+pd.reset_option('all')
+
+
+## shorten the accession numbers
+
+phase1bactAccessions = pd.Series(phase1aligns['sseqid'].str[0:11].unique())
+
+phase1bactAccessions.iloc[0]
+
+
+## check if all accession names are represented by a genome
+
+bb = phase1bactAccessions.apply(lambda x: bactRefGenomes['accession'].str.contains(x).any()) 
+
+bactRefGenomes['accession']
+
+
+## take just those contigs that appear at least 200 times, because they are only represented 11 times
+
+aa = pd.Series(phase1aligns['sseqid'].unique())
+
+filter = (phase1aligns.groupby('sseqid').count()['length'] > 200).to_list()
+
+phase1controlVeryCommonContigs = aa[filter]
+
+phase1controlVeryCommonContigs.reset_index(inplace=True, drop=True)
+
+phase1controlVeryCommonContigs_short = phase1controlVeryCommonContigs.str[0:11]
+
+
+## now search
+
+bb = phase1controlVeryCommonContigs_short.apply(lambda x: bactRefGenomes['accession'].str.contains(x).any())
+
+bactRefGenomes['access_short'] = bactRefGenomes['accession'].str[0:11] 
+
+genomeFilter = bactRefGenomes['access_short'].apply(lambda x: x in phase1controlVeryCommonContigs_short.values)
+
+phase1controlCommonBact = bactRefGenomes[genomeFilter]
+
+phase1controlCommonBact.to_csv('phase1controlCommonBact.csv', index=False)
+
+
+## for phase 2:
+
+bactRefGenomes = pd.read_csv('/mnt/ephem/look4bact3phase/bactRefGenFirstLines.tsv', names=['filename','accession', 'sp'], sep='\t')
+
+head=[ 'qseqid','sseqid','pident','length','mismatch',
+  'gapopen','qstart','qend','sstart','send','evalue','bitscore' ]
+phase2aligns=pd.read_csv("/mnt/ephem/look4bact3phase/phase2hostDepletion/phase2hostDepletion_bacterial_alignments.csv", names=head)
+
+phase2aligns.groupby('sseqid').count()['length']
+
+
+## take just those contigs that appear at least 500 times, because they are only represented 9 times
+
+aa = pd.Series(phase2aligns['sseqid'].unique())
+
+filter = (phase2aligns.groupby('sseqid').count()['length'] > 500).to_list()
+
+phase2hostDepletionVeryCommonContigs = aa[filter]
+
+phase2hostDepletionVeryCommonContigs.reset_index(inplace=True, drop=True)
+
+phase2hostDepletionVeryCommonContigs_short = phase2hostDepletionVeryCommonContigs.str[0:11]
+
+
+genomeFilter = bactRefGenomes['access_short'].apply(lambda x: x in phase2hostDepletionVeryCommonContigs_short.values)
+
+bactRefGenomes[genomeFilter]
+
+phase2hostDepletionCommonBact = bactRefGenomes[genomeFilter]
+
+phase2hostDepletionCommonBact.to_csv('phase2hostDepletionCommonBact.csv', index=False)
+
+
+## concatenate these from phase 1 and 2:
+
+phase1controlCommonBact = pd.read_csv('phase1controlCommonBact.csv')
+
+phase1controlCommonBact 
+phase2hostDepletionCommonBact
+
+interestingGenomes = pd.concat([phase1controlCommonBact,phase2hostDepletionCommonBact]).reset_index(drop=True)
+
+
+## convert this into a useful target for readfish
+
+interesting=(
+/mnt/ephem/bactGenomes/refSeq/GCF_000153465.1_ASM15346v1_genomic.fna 
+/mnt/ephem/bactGenomes/refSeq/GCF_000618385.1_EcK1795_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_001896145.1_ASM189614v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_002109385.1_ASM210938v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_003258865.1_ASM325886v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_004342085.1_ASM434208v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_005780165.1_ASM578016v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_014199735.1_ASM1419973v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_014200015.1_ASM1420001v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_014636175.1_ASM1463617v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_022664535.1_Sx8-8_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_000510665.1_ASM51066v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_002312805.1_ASM231280v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_002778835.1_ASM277883v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_004795855.1_ASM479585v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_006385685.1_ASM638568v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_013112485.1_ASM1311248v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_014202505.1_ASM1420250v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_027945725.1_ASM2794572v1_genomic.fna
+/mnt/ephem/bactGenomes/refSeq/GCF_030269665.1_ASM3026966v1_genomic.fna
+)
+
+
+## trim
+
+mkdir catInterestingGenomes
+
+for i in *.fna; do
+  echo $i
+  j=$(basename $i _genomic.fna)
+  grep -v "^>" $i | sed "1i\>$j" > "catInterestingGenomes/"$j"_modif.fna"
+done
+
+
+## and concat these:
+
+cat * > catCommonBacterialGenomes.fna
+
+
+## clean up a bit
+
+seqtk seq -l 80 catCommonBacterialGenomes.fna > commonBacterialGenomes.fna
+
+grep -c "^>" commonBacterialGenomes.fna ## twenty genomes, each genome is a target
+
+
+### make a mmi
+
+conda activate readfish
+
+minimap2 -d commonBacterialGenomes.mmi commonBacterialGenomes.fna
+
+
+
+### Phase 3: bacterial genome enrichment ###
+
+## create a readfish TOML
+
+touch bacterialEnrichment.toml
+
+""
+[caller_settings]
+config_name = "dna_r10.4.1_e8.2_400bps_fast.cfg"
+host = "ipc:///tmp/.guppy/"
+port = 5555
+
+[conditions]
+reference = "/media/vol1/daniel/hostDepletion/bacteriaEnrich3phase/commonBacterialGenomes.mmi"
+
+[conditions.0]
+name = "bacterialEnrichment3phase_phase3"
+control = false
+min_chunks = 0
+max_chunks = 3
+targets = ["GCF_000153465.1_ASM15346v1", "GCF_000510665.1_ASM51066v1", "GCF_000618385.1_EcK1795", "GCF_001896145.1_ASM189614v1", "GCF_002109385.1_ASM210938v1", "GCF_002312805.1_ASM231280v1", "GCF_002778835.1_ASM277883v1", "GCF_003258865.1_ASM325886v1", "GCF_004342085.1_ASM434208v1", "GCF_004795855.1_ASM479585v1", "GCF_005780165.1_ASM578016v1", "GCF_006385685.1_ASM638568v1", "GCF_013112485.1_ASM1311248v1", "GCF_014199735.1_ASM1419973v1", "GCF_014200015.1_ASM1420001v1", "GCF_014202505.1_ASM1420250v1", "GCF_014636175.1_ASM1463617v1", "GCF_022664535.1_Sx8-8", "GCF_027945725.1_ASM2794572v1", "GCF_030269665.1_ASM3026966v1"]
+single_on = "stop_receiving"
+multi_on = "stop_receiving"
+single_off = "unblock"
+multi_off = "unblock"
+no_seq = "proceed"
+no_map = "unblock"
+""
+
+
+## application of readfish scripts to running sequencing for enrichment
+## first check if the toml will drive an experiment
+
+readfish validate bacterialEnrichment.toml
+
+
+## start depletion with targets command
+
+readfish targets --device MN40608 \
+              --experiment-name "hostDepletion3phase" \
+              --toml bacterialEnrichment.toml \
+              --log-file hostDepletion3phase_phase3.log
+
+
+
+
+### Quality control analysis ###
+
+## on deNBI
+
+### FastQC ###
+
+## installation (on deNBI)
+
+wget https://www.bioinformatics.babraham.ac.uk/projects/fastqc/fastqc_v0.12.1.zip
+
+sudo apt install unzip
+
+unzip fastqc_v0.12.1.zip
+
+chmod 755 fastqc
+
+
+
+### Phase 1
+## transfer fastq files from passed reads to deNBI
+
+scp -P 30336 -r ~/data/minknow/experiment_spruce_threephase/phase1_control/fastq_pass ubuntu@129.70.51.6:/home/ubuntu/data/minknow/experiment_spruce_threephase/phase1_control
+
+
+## decompress the fastq files and concatenate them 
+
+gunzip *.fastq.gz
+
+cat *.fastq > phase1_control_pass.fastq
+
+
+## run a fastqc analysis on the combined
+## -t --threads    Specifies the number of files which can be processed simultaneously.
+
+fastqc -t 3 --extract phase1_control_pass.fastq
+
+
+## get the results from deNBI onto your local desktop
+
+scp -P 30336 ubuntu@129.70.51.6:/home/ubuntu/data/minknow/experiment_spruce_threephase/phase1_control/fastq_pass/phase1_control_pass_fastqc.html ~/FastQC_results/experiment_spruce_threephase/phase1_control
+
+
+## on local desktop: look at the html file with a web-browswer
+
+firefox phase1_control_pass_fastqc.html
+
+
+
+### Phase 2
+## transfer fastq files from passed reads to deNBI
+
+scp -r /var/lib/minknow/data/experiment_spruce_threephase/phase2hostDepletion/20230913_2238_MN40608_FAX46654_d4c9fea9/fastq_pass lara@132.180.112.24:/home/lara/data/minknow/experiment_spruce_threephase/phase2_depletion
+
+
+## decompress the fastq files and concatenate them 
+
+gunzip *.fastq.gz
+
+cat *.fastq > phase2_depletion_pass.fastq
+
+
+## get targeted reads without the rejected ones:
+## 1. get a list of all the names of reads in the fastq
+
+## the following command prints every fourth line, and cleans extra information with "cut" and another sed command to get rid of "@" fromt the read names.
+## but first install the program
+
+conda install -c conda-forge sed
+
+sed -n '1~4p' phase2_depletion_pass.fastq |
+cut -f 1 -d " " | 
+sed "s/^@//" > phase2_depletion_pass.txt
+
+
+## 2. remove the names of reads that were unblocked (rejected) by readfish. We do this by concatenating, sorting and removing duplicates
+
+## first transfer the file with unblocked reads, then concatenate all passed reads with the rejected reads, sort out the reads that were unblocked by readfish and filter out the repeated lines
+
+scp  /var/lib/minknow/data/experiment_spruce_threephase/phase2hostDepletion/20230913_2238_MN40608_FAX46654_d4c9fea9/unblocked_read_ids.txt.cp lara@132.180.112.24:/home/lara/data/minknow/experiment_spruce_threephase/phase2_depletion
+
+cat ./fastq_pass/phase2_depletion_pass.txt unblocked_read_ids.txt.cp > passedAndUnblocked_notSorted.txt
+sort passedAndUnblocked_notSorted.txt > comboNames.txt
+uniq -u comboNames.txt > passedReads_noUnblocked.txt
+
+
+## 3. use seqtk to extract sequences with names in the generated text file
+## first install seqtk
+
+conda create -y --name ngs1 python=3.8.10
+
+conda activate ngs1
+
+conda install -c bioconda seqtk
+
+
+## use the previously generated list to pull out the reads that we want from the original fastq
+
+seqtk subseq ./fastq_pass/phase2_depletion_pass.fastq passedReads_noUnblocked.txt > passedReads_noUnblocked.fastq
+
+
+## run a fastQC analysis on the combined
+
+fastqc -t 3 --extract passedReads_noUnblocked.fastq
+
+
+## Get the results from deNBI onto your local desktop
+
+scp -P 30336 ubuntu@129.70.51.6:/home/ubuntu/data/minknow/experiment_spruce_threephase/phase2_depletion/passedReads_noUnblocked_fastqc.html ~/FastQC_results/experiment_spruce_threephase/phase2_depletion
+
+
+## on local desktop: look at the html file with a web-browswer
+
+firefox passedReads_noUnblocked_fastqc.html
+
+
+
+### Phase 3 (first & second run)
+## transfer fastq files from passed reads to deNBI
+
+scp -r /var/lib/minknow/data/experiment_spruce_threephase/bacterialEnrichment/20230915_0214_MN40608_FAX46654_a698b104/fastq_pass lara@132.180.112.24:/home/lara/data/minknow/experiment_spruce_threephase/phase3_enrichment
+
+scp -r /var/lib/minknow/data/experiment_spruce_threephase/bacterialEnrichment_second/20230915_1740_MN40608_FAX46654_107b057e/fastq_pass lara@132.180.112.24:/home/lara/data/minknow/experiment_spruce_threephase/phase3_enrichment
+
+
+## decompress the fastq files and concatenate them 
+
+gunzip *.fastq.gz
+
+cat *.fastq > phase3_enrichment_first_pass.fastq
+
+cat *.fastq > phase3_enrichment_second_pass.fastq
+
+
+## get targeted reads without the rejected ones
+## 1. get a list of all the names of reads in the fastq
+
+## The following command prints every fourth line, and cleans extra information with "cut" and another sed command to get rid of "@" fromt the read names
+
+sed -n '1~4p' phase3_enrichment_first_pass.fastq | cut -f 1 -d " " | sed "s/^@//" > phase3_enrichment_first_pass.txt
+
+sed -n '1~4p' phase3_enrichment_second_pass.fastq | cut -f 1 -d " " | sed "s/^@//" > phase3_enrichment_second_pass.txt
+
+
+## 2. remove the names of reads that were unblocked (rejected) by readfish. We do this by concatenating, sorting and removing duplicates
+
+## first transfer the file with unblocked reads, then concatenate all passed reads with the rejected reads, sort out the reads that were unblocked by readfish and filter out the repeated lines
+
+scp  /var/lib/minknow/data/experiment_spruce_threephase/bacterialEnrichment/20230915_0214_MN40608_FAX46654_a698b104/unblocked_read_ids.txt.cp lara@132.180.112.24:/home/lara/data/minknow/experiment_spruce_threephase/phase3_enrichment
+
+scp  /var/lib/minknow/data/experiment_spruce_threephase/bacterialEnrichment_second/20230915_1740_MN40608_FAX46654_107b057e/unblocked_read_ids_second.txt.cp lara@132.180.112.24:/home/lara/data/minknow/experiment_spruce_threephase/phase3_enrichment
+
+cat phase3_enrichment_first_pass.txt unblocked_read_ids.txt.cp > passedAndUnblocked_notSorted_first.txt
+sort passedAndUnblocked_notSorted_first.txt > comboNames_first.txt
+uniq -u comboNames_first.txt > passedReads_noUnblocked_first.txt
+
+cat phase3_enrichment_second_pass.txt unblocked_read_ids.txt.cp > passedAndUnblocked_notSorted_second.txt
+sort passedAndUnblocked_notSorted_second.txt > comboNames_second.txt
+uniq -u comboNames_second.txt > passedReads_noUnblocked_second.txt
+
+
+## 3. use seqtk to extract sequences with names in the generated text file
+
+## use the previously generated list to pull out the reads that we want from the original fastq
+
+seqtk subseq phase3_enrichment_first_pass.fastq passedReads_noUnblocked_first.txt > passedReads_noUnblocked_first.fastq
+
+seqtk subseq phase3_enrichment_second_pass.fastq passedReads_noUnblocked_second.txt > passedReads_noUnblocked_second.fastq
+
+
+## run a fastQC analysis on the combined
+
+fastqc -t 3 --extract passedReads_noUnblocked_first.fastq
+
+fastqc -t 3 --extract passedReads_noUnblocked_second.fastq
+
+
+## Get the results from deNBI onto your local desktop
+
+scp -P 30336 ~/data/minknow/experiment_spruce_threephase/phase3_enrichment/separatedRuns/passedReads_noUnblocked_first.fastq ubuntu@129.70.51.6:/home/ubuntu/data/minknow/experiment_spruce_threephase/phase3_enrichment
+
+scp -P 30336 ~/data/minknow/experiment_spruce_threephase/phase3_enrichment/separatedRuns/passedReads_noUnblocked_second.fastq ubuntu@129.70.51.6:/home/ubuntu/data/minknow/experiment_spruce_threephase/phase3_enrichment
+
+
+## on local desktop: look at the html file with a web-browswer
+
+firefox passedReads_noUnblocked_first_fastqc.html passedReads_noUnblocked_second_fastqc.html
+
+
+
+
+### NanoQC ###
+
+### installation (on deNBI)
+## create a new environment + specific python version
+
+conda create -y --name ngs1 python=3.8.10
+
+conda activate ngs1
+
+conda install -c bioconda nanoqc
+
+
+### Phase 1
+
+## compress the fastq file and run the nanoQC command
+
+gzip phase1_control_pass.fastq
+
+nanoQC phase1_control_pass.fastq.gz
+
+
+## get the results from deNBI onto your local desktop
+
+scp -P 30336 ubuntu@129.70.51.6:~/data/minknow/experiment_spruce_threephase/phase1_control/nanoQC/fastq_pass/nanoQC.html ~/FastQC_results/experiment_spruce_threephase/phase1_control
+
+
+## on local desktop: look at the html file with a web-browswer
+
+firefox nanoQC.html
+
+
+
+### Phase 2
+
+## compress the fastq file and run the nanoQC command
+
+gzip passedReads_noUnblocked_nanoqc.fastq
+
+nanoQC passedReads_noUnblocked_nanoqc.fastq.gz
+
+
+## get the results from deNBI onto your local desktop
+
+scp -P 30336 ubuntu@129.70.51.6:~/data/minknow/experiment_spruce_threephase/phase2_depletion/nanoQC.html ~/FastQC_results/experiment_spruce_threephase/phase2_depletion
+
+
+## on local desktop: look at the html file with a web-browswer
+
+firefox nanoQC.html
+
+
+
+### Phase 3
+
+## compress the fastq file and run the nanoQC command
+
+gzip passedReads_noUnblocked_nanoqc.fastq
+
+nanoQC passedReads_noUnblocked_nanoqc.fastq.gz
+
+
+## get the results from deNBI onto your local desktop
+
+scp -P 30336 ubuntu@129.70.51.6:~/data/minknow/experiment_spruce_threephase/phase3_enrichment/nanoQC.html ~/FastQC_results/experiment_spruce_threephase/phase3_enrichment
+
+
+## on local desktop: look at the html file with a web-browswer
+
+firefox nanoQC.html
+
+
+
+
+### R ###
+
+## installing R
+
+sudo apt-get install r-base
+
+
+
+### Alignments to bacterial genomes ###
+
+### Phase 2 alignments:
+
+## mimimap alignment to host
+## first install minimap2 on deNBI
+
+conda activate ngs1
+
+conda install -c bioconda minimap2
+
+sprucemmi=/mnt/ephem/3phaseExperiment/Pabies-haploid_withOrganelles.mmi
+
+reads=/mnt/ephem/3phaseExperiment/passedReads_nounblocked_phase2.fastq
+
+nohup minimap2 \
+  -I100g \
+  -t 20 \
+  -x map-ont \
+  --secondary=no \
+  $sprucemmi $reads \
+  1> phase2hostDepletion_Align2Spruce.paf \
+  2> phase2hostDepletion_Align2Spruce.paf.log &
+  
+## cut the column 13 and following out
+
+cut -f13- --complement phase2hostDepletion_Align2Spruce.paf > phase2hostDepletion_Align2Spruce_cleaned.paf
+
+
+## read in the file 
+
+pafNames=c("QueryName","QueryLength","QueryStart","QueryEnd","RelativeStrand",
+"TargetName","TargeLength","TargetStart","TargetEnd",
+"ResidueMatches","AlignmentBlockLngth","MappingQuality")
+
+aa = read.csv("phase2hostDepletion_Align2Spruce_cleaned.paf", sep="\t",col.names=pafNames)
+
+
+## we want to get rid of reads with bad MappingQuality (score <=10)
+## but for one read there can be up to 2 more contigs from the reference which align to it
+## therefore install dplyr
+
+conda activate ngs1
+
+install.packages("dplyr")
+
+library("dplyr")
+
+
+## we want to get only the highest-quality alignment for each read (align to spruce host)
+## use group_by() to create a "grouped" copy of a table
+## dplyr functions will manipulate each "group" separately and then combine the results
+## summary functions take vectors as input and return one value
+
+bb <- aa %>%
+  group_by(QueryName) %>%
+  summarize(maxScore = max(MappingQuality))
+  
+
+## coerce it to a data frame
+
+bestscores = as.data.frame(bb)
+
+save(bestscores, file="phase2_bestscores_unfiltered.csv")
+
+
+## generating filtering indices
+## filtering <= 10 scores
+
+## first test your file with true/false
+
+bestscores$maxScore <= 10
+
+
+## then save it and aply it to the file
+## [row,column]
+
+badScoreFilter <- bestscores$maxScore <= 10
+
+bestscores[badScoreFilter,]
+
+less10 <- bestscores[badScoreFilter,]
+
+save(less10, file="phase2_scoresless10.tsv")
+
+
+## now lets look if we can find potential microbial reads from phase 2 which didnt align at all or aligned badly to host genome
+## first transfer the fastq file from my local desktop to deNBI
+
+scp -P 30336 ~/data/minknow/experiment_spruce_threephase/phase2_depletion/passedReads_noUnblocked.fastq ubuntu@129.70.51.6:/home/ubuntu/data/minknow/experiment_spruce_threephase/phase2_depletion
+
+
+## get just the names of all reads in the alignment
+
+cut -f1-12 phase2hostDepletion_Align2Spruce.paf > phase2hostDepletion_Align2Spruce_names.paf
+
+
+## sort these and get only the unique ones
+
+cut phase2hostDepletion_Align2Spruce_names.paf -f 1 | sort | uniq > seqsThatAligned.txt
+
+
+## now we need the names of the sequences in our fastq
+
+## for this we would use sed, and tell it to print every fourth line
+## but this gives us a lot of extra information. We just want the name of the read
+## cut to the rescue, again!
+## use sed again to get rid of the "@" at the beginning
+
+sed -n '1~4p' passedReads_noUnblocked.fastq |
+cut -f 1 -d " " |
+sed "s/^@//" > namesOfAllPhase2Reads.txt
+
+
+## we want get reads that didn't align at all to the spruce genome
+## this means we need to subtract the the aligned reads from the total reads
+
+cat namesOfAllPhase2Reads.txt seqsThatAligned.txt > totalAndAlignedReads_notSorted.txt
+sort totalAndAlignedReads_notSorted.txt > totalAndAlignedReads_sorted.txt
+uniq -u totalAndAlignedReads_sorted.txt > noAlignedreads.txt
+
+
+## save the file with the reads which aligned badly
+
+write.csv(less10, file="phase2_scoresless10.csv", row.names=FALSE)
+
+
+## cat outputs the objects and concatenating the representations (just the QueryNames) with no linefeeds as a character vector
+
+cat(less10$QueryName, file="phase2_scoresless10.txt", sep="\n")
+
+
+## concatenate the reads that align badly + the reads that didn't align at all (were totally rejected)
+
+cat phase2_scoresless10.txt noAlignedreads.txt > phase2_potentialMicrobialReads.txt
+
+
+## seqtk: extract sequences with names in the generated text file
+
+seqtk subseq passedReads_nounblocked_phase2.fastq phase2_potentialMicrobialReads.txt > phase2_potentialMicrobialReads.fastq
+
+
+
+### blast alignment
+
+## proof if the potential microbial reads from phase 2 align to the bacterial genomes (fastq)
+## the bacterial genomes were downloaded from deNBI
+
+wget ftp://ftp.ncbi.nih.gov/genomes/genbank/bacteria/assembly_summary.txt
+
+
+## concatenate the genomes with the find command (because there were a lot of arguments)
+
+find /vol/piceaNanopore/dan/refGenomes/bactGenomes/refSeq -type f -exec chmod 444 {}
+find /vol/piceaNanopore/dan/refGenomes/bactGenomes/refSeq -type f -exec cat {} + > allbactGenomes.fa
+
+
+## make a bacterial blast database
+## first install blast
+
+conda activate ngs1
+
+conda install -c bioconda blast
+
+
+## change the characters for the blast search
+
+genome="allbactGenomes.fa"
+
+sed -i  "/^>/ s/ /:/" $genome
+
+
+## edit them before concatenating
+
+genome="/vol/piceaNanopore/dan/refGenomes/bactGenomes/refSeq"
+
+find /vol/piceaNanopore/dan/refGenomes/bactGenomes/refSeq -type f -exec chmod 444 {} +
+
+for genome in *
+do
+ #echo $genome
+ sed -i  "/^>/ s/ /:/" $genome
+done
+
+find /vol/piceaNanopore/dan/refGenomes/bactGenomes/refSeq -type f -exec chmod 444 {} +
+find /vol/piceaNanopore/dan/refGenomes/bactGenomes/refSeq -type f -exec cat {} + > allbactGenomes.fa
+
+
+## first, we need to tell blast that the "allbact" sequences are a database -> a nucleotide database
+
+makeblastdb -in allbactGenomes.fa -dbtype nucl
+
+
+## next, we call blast to do the search
+## first convert the fastq file with seqtk
+
+seqtk seq -A phase2_potentialMicrobialReads.fastq > phase2_potentialMicrobialReads.fasta
+
+noHostAlign=/mnt/ephem/3phaseExperiment/phase2_potentialMicrobialReads.fasta
+
+nohup blastn -db /mnt/ephem/3phaseExperiment/refGenomes/allbactGenomes.fa \
+  -query $noHostAlign \
+  -num_threads 10 \
+  -num_alignments 1 \
+  -out phase2_bacterial_blastn.csv \
+  -outfmt 10 &
+
+wc -l phase2_bacterial_blastn.csv  ## 16541 reads
+  
+  
+  
+### Phase 1 alignments:
+
+## align the rejected reads: minimap2
+
+sprucemmi=/mnt/ephem/3phaseExperiment/Pabies-haploid_withOrganelles.mmi
+
+reads=/mnt/ephem/3phaseExperiment/phase1_control_pass.fastq
+
+conda activate ngs1
+
+nohup minimap2 \
+  -I100g \
+  -t 20 \
+  -x map-ont \
+  --secondary=no \
+  $sprucemmi $reads \
+  1> phase1control_Align2Spruce.paf \
+  2> phase1control_Align2Spruce.paf.log &
+  
+  
+## cut the column 13 and following out
+
+cut -f13- --complement phase1control_Align2Spruce.paf > phase1control_Align2Spruce_cleaned.paf
+
+
+## we want to get only the highest-quality alignment for each read to the spruce host
+
+## read in the file
+
+pafNames=c("QueryName","QueryLength","QueryStart","QueryEnd","RelativeStrand",
+"TargetName","TargeLength","TargetStart","TargetEnd",
+"ResidueMatches","AlignmentBlockLngth","MappingQuality")
+
+aa = read.csv("phase1control_Align2Spruce_cleaned.paf", sep="\t",col.names=pafNames)
+
+
+## to define the following function a package (dplyr) is necessary
+
+library("dplyr")
+
+bb <- aa %>%
+  group_by(QueryName) %>%
+  summarize(maxScore = max(MappingQuality))
+
+bestscores = as.data.frame(bb)
+
+save(bestscores, file="phase1_bestscores_unfiltered.rda")
+
+
+## generating filtering indices
+## filtering <= 10 scores
+
+## first test your file with true/false
+
+bestscores$maxScore <= 10
+
+
+## then save it and aply it to the file
+## [row,column]
+
+badScoreFilter <- bestscores$maxScore <= 10
+
+bestscores[badScoreFilter,]
+
+less10 <- bestscores[badScoreFilter,]
+
+save(less10, file="phase1_scoresless10.rda")
+
+write.csv(less10, file="phase1_scoresless10.csv", row.names=FALSE)
+
+
+## cat outputs the objects  and concatenating the representations (just the QueryNames) with no linefeeds as a character vector
+
+cat(less10$QueryName, file="phase1_scoresless10.txt", sep="\n")
+
+
+## spruce-aligned reads
+
+cut phase1control_Align2Spruce_cleaned.paf -f 1 | sort | uniq > seqsThatAligned_names.txt
+
+
+## all passed reads
+
+sed -n '1~4p' phase1_control_pass.fastq |
+cut -f 1 -d " "  |
+sed "s/^@//" > namesOfAllPhase1Reads.txt
+
+
+## concatenate all passed reads with the spruce-aligned reads, sort out the reads that were aligned and filter out the repeated lines
+
+cat namesOfAllPhase1Reads.txt seqsThatAligned_names.txt > passedAndAligned_notSorted.txt
+sort passedAndAligned_notSorted.txt > comboNames.txt
+uniq -u comboNames.txt > passedReads_nospruce.txt
+
+
+## seqtk: extract sequences with names in the generated text file
+
+seqtk subseq phase1_control_pass.fastq passedReads_nospruce.txt > passedReads_nospruce.fastq
+
+
+## concatenate the reads that align badly + the reads that didn't align at all
+
+cat phase1_scoresless10.txt passedReads_nospruce.txt > phase1_potentialMicrobialReads.txt
+
+seqtk subseq phase1_control_pass.fastq phase1_potentialMicrobialReads.txt > phase1_potentialMicrobialReads.fastq
+
+
+## next, we call blast to do the search
+## first convert the fastq file with seqtk
+
+seqtk seq -A phase1_potentialMicrobialReads.fastq > phase1_potentialMicrobialReads.fasta
+
+noHostAlign=/mnt/ephem/3phaseExperiment/phase1_potentialMicrobialReads.fasta
+
+nohup blastn -db /mnt/ephem/3phaseExperiment/refGenomes/allbactGenomes.fa \
+  -query $noHostAlign \
+  -num_threads 10 \
+  -num_alignments 1 \
+  -out phase1_bacterial_blastn.csv \
+  -outfmt 10 &
+
+wc -l phase1_bacterial_blastn.csv  ## 6285 reads
+
+
+
+### Phase 3 alignments
+
+## Consequently, the script of the alignments is represented by the reads of the first run of the third phase. The same script was used for the reads of the second run, only the file names differ with "first" and "second"
+
+## align the passed reads to host: minimap2
+
+sprucemmi=/mnt/ephem/3phaseExperiment/Pabies-haploid_withOrganelles.mmi
+
+reads=/mnt/ephem/3phaseExperiment/passedReads_noUnblocked_first.fastq
+
+conda activate ngs1
+
+nohup minimap2 \
+  -I100g \
+  -t 20 \
+  -x map-ont \
+  --secondary=no \
+  $sprucemmi $reads \
+  1> phase3enrichment_first_Align2Spruce.paf \
+  2> phase3enrichment_first_Align2Spruce.paf.log &
+
+
+## cut the column 13 and following out
+
+cut -f13- --complement phase3enrichment_second_Align2Spruce.paf > phase3enrichment_second_Align2Spruce_cleaned.paf
+
+
+## read in the file
+
+pafNames=c("QueryName","QueryLength","QueryStart","QueryEnd","RelativeStrand","TargetName","TargeLength","TargetStart","TargetEnd","ResidueMatches","AlignmentBlockLngth","MappingQuality")
+
+aa = read.csv("phase3enrichment_first_Align2Spruce_cleaned.paf", sep="\t",col.names=pafNames)
+
+
+## to define the following function a package (dplyr) is necessary
+
+library("dplyr")
+
+bb <- aa %>%
+  group_by(QueryName) %>%
+  summarize(maxScore = max(MappingQuality))
+
+bestscores = as.data.frame(bb)
+
+save(bestscores, file="phase3_first_bestscores_unfiltered.rda")
+
+
+## generating filtering indices
+## filtering <= 10 scores
+
+## first test your file with true/false
+
+bestscores$maxScore <= 10
+
+
+## then save it and aply it to the file
+## [row,column]
+
+badScoreFilter <- bestscores$maxScore <= 10
+
+bestscores[badScoreFilter,]
+
+less10 <- bestscores[badScoreFilter,]
+
+save(less10, file="phase3_first_scoresless10.rda")
+
+write.csv(less10, file="phase3_first_scoresless10.csv", row.names=FALSE)
+
+
+## cat outputs the objects  and concatenating the representations (just the QueryNames) with no linefeeds as a character vector
+
+cat(less10$QueryName, file="phase3_first_scoresless10.txt", sep="\n")
+
+
+## spruce-aligned reads
+
+cut phase3enrichment_first_Align2Spruce_cleaned.paf -f 1 | sort | uniq > seqsThatAligned_names_first.txt
+
+
+## all passed reads
+
+sed -n '1~4p' phase3_enrichment_first_pass.fastq |
+cut -f 1 -d " "  |
+sed "s/^@//" > namesOfAllPhase3_firstReads.txt
+
+
+## now, we want get reads that didn't align at all to the spruce genome
+## this means we need to subtract the the aligned reads from the total reads
+
+cat namesOfAllPhase3_firstReads.txt seqsThatAligned_names_first.txt > totalAndAlignedReads_notSorted_first.txt
+sort totalAndAlignedReads_notSorted_first.txt > totalAndAlignedReads_sorted_first.txt
+uniq -u totalAndAlignedReads_sorted_first.txt > noAlignedreads_first.txt
+
+
+## concatenate the reads that align badly + the reads that didn't align at all (were totally rejected)
+
+cat phase3_first_scoresless10.txt noAlignedreads_first.txt > phase3_first_potentialMicrobialReads.txt
+
+
+## seqtk: extract sequences with names in the generated text file
+
+seqtk subseq passedReads_noUnblocked_first.fastq phase3_first_potentialMicrobialReads.txt > phase3_first_potentialMicrobialReads.fastq
+
+
+## next, we call blast to do the search
+## first convert the fastq file with seqtk
+
+seqtk seq -A phase3_first_potentialMicrobialReads.fastq > phase3_first_potentialMicrobialReads.fasta
+
+noHostAlign=/mnt/ephem/3phaseExperiment/phase3_first_potentialMicrobialReads.fasta
+
+nohup blastn -db /mnt/ephem/3phaseExperiment/refGenomes/allbactGenomes.fa \
+  -query $noHostAlign \
+  -num_threads 10 \
+  -num_alignments 1 \
+  -out phase3_first_bacterial_blastn.csv \
+  -outfmt 10 &
+
+wc -l phase3_first_bacterial_blastn.csv  ## 20160 reads
+
+wc -l phase3_second_bacterial_blastn.csv  ## 8163 reads
+
+
+
+
+### Generation of diagrams using R ###
+
+R
+
+### bacterial proportion
+
+## count the bases of bacterial reads and total reads, for each phase
+## for the bacterial bases the following fasta file is used
+## for the total bases I used the passed and failed fastq files, concatenated the files and converted them to FASTA format (seqtk)
+## counting is shown as an example using a fasta file of phase 1
+
+grep -v ">" phase1_potentialMicrobialReads.fasta | grep -E -o "G|C|T|A" | wc -l
+
+
+## aligning the counts from the first and second run of phase 3 together
+
+## generate table
+
+bases_table <- matrix(c(1708670300, 1848279838, 3081435036, 26850033, 73988751, 72830815), ncol=3, byrow=TRUE)
+colnames(bases_table) <- c('Phase 1','Phase 2','Phase 3')
+rownames(bases_table) <- c('total bases','bacteria bases')
+bases_table <- as.table(bases_table)
+
+
+## save table
+
+write.table(bases_table, file='table_basepair_counts_phase3_combined.txt')
+
+
+## do with percentages, I calculated the percentages by hand
+
+bases_table_P <- matrix(c(1.57, 4.00, 2.36, 98.43, 96.00, 97.64), ncol=3, byrow=TRUE)
+colnames(bases_table_P) <- c('Phase 1','Phase 2','Phase 3')
+rownames(bases_table_P) <- c('bacteria bases','total bases')
+bases_table_P <- as.table(bases_table_P)
+
+
+## save table
+
+write.table(bases_table_P, file='table_basepair_counts_phase3_combined_percentage.txt')
+
+## create a SVG
+
+svg("bacterial_proportions_basepairs_phase3_combined_legend.svg")
+
+
+## code of the barplot
+
+barplot(bases_table_P,
+  ylab = "bases (%)",
+  col = c("sienna3","slategrey"),
+  legend.text = c("bacteria", "non-bacteria"),
+  axis.lty=1,
+  args.legend = list(x = "topright"), 
+  beside = FALSE)
+     
+     
+# Close the svg
+
+dev.off()
+
+
+
+### stacked barplot for species composition
+
+## generate table
+
+species_table <- matrix(c(30.15, 22.03, 30.99, 21.50, 42.57, 24.91, 11.82, 9.06, 3.16, 9.71, 5.75, 15.72, 8.99, 7.01, 10.22, 7.19, 5.21, 5.73, 6.46, 4.36, 6.70, 4.17, 3.99, 2.57), ncol=3, byrow=TRUE)
+colnames(species_table) <- c('Phase 1','Phase 2','Phase 3')
+rownames(species_table) <- c('Pseudomonas','Corynebacterium','Lichenibacterium','Escherichia','Ottowia','Streptomyces','Yimella','Sphingomonas')
+species_table <- as.table(species_table)
+
+
+## save table
+
+write.table(species_table, file='table_8species_percentage')
+
+
+## create a plot
+
+barplot(species_table,
+        main = "Species composition",
+        xlab = "phase", ylab = "Percentage of reads",
+        col = c("lightcoral", "skyblue", "lightpink", "darkseagreen", "sienna3", "slategrey", "thistle", "sandybrown"),
+        legend.text = rownames(species_table),
+        beside = FALSE)
