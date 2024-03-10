@@ -3491,7 +3491,7 @@ adaptSeqCategorized.groupby('aligned2').count()
 
 ## so we don't see a dramatic increase in bacterial reads, I think. 
 
-######################################################
+####################### 3 phase experiment ###############################
 
 ## and so we try again, with a different experimental approach
 
@@ -3914,7 +3914,6 @@ nohup blastn -db $bactRefGenome \
 
 ## started at 16:00 on thursday
 ## finished in ~1 hour
-
 
 
 ###### repeat with phase2 ##########
@@ -5738,3 +5737,157 @@ ax.axis("off")
 ax.set_aspect("equal")
 ax.autoscale()
 
+#### prepping for IMC ####
+
+## we should probably write about the 
+## host depletion/nanopore project
+## for IMC.
+
+## but is there something to write about?
+
+## the main idea would be to report
+## about the ostensibly fungal reads
+## that we could find in the phase2
+
+## where are the reads that blasted to 
+## fungi?
+
+## this was created on line 2899 above:
+
+fungBlast=/media/vol1/daniel/denbiBackups/vol/piceaNanopore/dan/refGenomes/fungalGenomes/depletionTrial_fungal_blastn.csv
+
+less $fungBlast
+
+## no, that was a trial with Chris's data
+
+## so it looks like I didn't try a blast of 
+## the raw reads against a fungal ref species
+## genome
+
+## so, can we? We have denbi all next week...
+## start an instance, put the reads from the
+## host exclusion and control phases,
+## both filtered by a host alignment and not,
+
+## so with the remaining hour - clean up the denbi
+## instance that is not in use,
+## set up the fungal reference genome download from
+## above
+
+## next week rerun the blast search
+## then submit reads for annotation on MGrast or kegg?
+
+## from our nanocomp machine, should be able to:
+
+ssh -i /home/test/.ssh/lab2denbi ubuntu@129.70.51.6 -p 30374
+
+## from line 2700 above, we have these records 
+## of the fungal genomes that we downloaded:
+
+## on nanocomp, these lists are backed up here:
+file2put=/media/vol1/daniel/denbiBackups/vol/piceaNanopore/dan/refGenomes/fungalGenomes
+where2put=/vol/here/fungalGenomes
+scp -P 30374 -ri /home/test/.ssh/lab2denbi $file2put ubuntu@129.70.51.6:$where2put 
+
+## back on denbi:
+ 
+cd /vol/here/fungalGenomes
+
+
+getFiles=/vol/here/fungalGenomes/fungalGenomes/files2download.txt
+putFiles=/vol/here/fungalGenomes/fungalGenomes/refSeq/
+nohup wget -i $getFiles -P $putFiles &> downloadRefSeq.log &
+
+## looks okay, should run all day. 
+## make data base, run blast search for all 
+## "proceed" reads, and also just ones 
+## filtered by alignment to spruce genome.
+
+
+cd /vol/here/fungalGenomes
+
+ls | wc -l ## 5793 genomes, 63gig compressed
+
+## now we want to relabel these, so that all contigs 
+## have the name of the NCBI genome and the organism name
+
+GCA_013623715.1_ASM1362371v1_genomic.fna.gz
+
+GCA_013623725.1_ASM1362372v1_genomic.fna.gz 
+
+## we have a lot of temporary space, let's use it:
+
+sudo cp -r /vol/here/fungalGenomes/fungalGenomes/refSeq /mnt
+
+cd /mnt/refSeq
+
+## we can worry about recovering taxonomy once the 
+## alignments are running, as long as taxonomy is 
+## recoverable. I think the approp entrez command is 
+## entrez_summary...
+
+## let's assume this can be down with the first 
+## part of the file names of each of these 
+## genome assembly files, which looks like a 
+## genbank accession number.
+
+## for each genome, we want to get this number,
+## and enter it as the new name of each scaffold
+
+## then when we combine all these genomes into one
+## blastable database, the results will contain 
+## the genome 
+
+## so first step is clean up the file names:
+
+ls | wc -l ## 5793
+
+## they all have the same ending:
+ls *_genomic.fna.gz | wc -l 
+
+## they all have the following pattern:
+ls ???_?????????.?_* | wc -l ## 5973
+ls ???_*.?_* | wc -l ## 5973
+
+## so it should be okay to do this:
+
+gunzip *  ## then disowned...
+
+clear
+for i in *; do 
+  echo $i
+  #mv $i ${i::15}.fna
+done
+
+ls | wc -l ## doesn't look like we lost any. 
+
+i="GCA_958305575.1_cclaro-a-1n_genomic.fna.gz"
+
+## from there, how do we modify our scaffold names?:
+
+
+## all scaffolds should have the genome accession name
+for i in *; do
+  echo $i
+  j=${i/.fna/}
+  sed -i "s/>.*/>${j}/g" $i 
+done
+
+
+
+less GCA_001683735.1.fna
+
+less GCA_003314085.1.fna
+
+## now we should be able to concatenate these, to make a single reference 
+
+cat *.fna > allRefGenomesFungal.fa
+
+## then index this, see if blastn will allow the repitive names
+
+## then start the blasting of which files? 
+
+## we want the reads from phase 1 and 2 that made it 
+## passed readfish (non-unblocked reads). 
+
+## phase 1 reads are here
