@@ -5874,20 +5874,34 @@ for i in *; do
 done
 
 
-
 less GCA_001683735.1.fna
 
 less GCA_003314085.1.fna
 
 ## now we should be able to concatenate these, to make a single reference 
 
-cat *.fna > allRefGenomesFungal.fa
+nohup cat *.fna > allRefGenomesFungal.fa &
+
+funbot5
+
+#sudo apt install ncbi-blast+
+
+nohup makeblastdb -in allRefGenomesFungal.fa -dbtype nucl &
 
 ## then index this, see if blastn will allow the repitive names
 
-## then start the blasting of which files? 
+## we are running out of space, get rid of the individual genomes:
 
-## we want the reads from phase 1 and 2 that made it 
-## passed readfish (non-unblocked reads). 
+rm *.fna
 
-## phase 1 reads are here
+## now what are we blasting? We want a comparison of indentifiable 
+## fungal reads from phase 1 vs. phase 2 (that made it past readfish)
+
+## so we need all the reads from phase 1, first. They are here:
+
+
+file2put=
+where2put=/vol/here/fungalGenomes/rawReads/phase1
+scp -P 30374 -ri /home/test/.ssh/lab2denbi $file2put ubuntu@129.70.51.6:$where2put 
+
+
