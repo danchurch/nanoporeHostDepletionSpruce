@@ -5914,3 +5914,38 @@ where2put=/vol/here/fungalGenomes/rawReads/phase2
 nohup scp -P 30374 -ri /home/test/.ssh/lab2denbi $file2put ubuntu@129.70.51.6:$where2put &
 
 ssh -p 30374 -i /home/test/.ssh/lab2denbi ubuntu@129.70.51.6
+
+## files are on there, 
+
+## we need to concatenate the read files and convert to fasta
+
+cd /vol/here/fungalGenomes/rawReads/phase1/fastq_pass/
+
+gunzip * ## actually, turns out you don't need to do that, can just cat them directly
+
+cat * > phase1.fastq.combined
+
+## convert to fasta
+
+sudo apt install seqtk
+
+seqtk seq -A phase1.fastq.combined > phase1.fa
+
+## now should be good to run the blastn search
+
+## this would be all phase1 reads, looking for matches in the
+## fungal reference genome
+
+cd /vol/here/fungalGenomes
+
+fungRefGenome=/mnt/refSeq/allRefGenomesFungal.fa
+phase1rawReads=/vol/here/fungalGenomes/rawReads/phase1/fastq_pass/phase1.fa
+nohup blastn -db $fungRefGenome \
+  -query $phase1rawReads \
+  -num_threads 13 \
+  -num_alignments 1 \
+  -out phase1control_fungal.csv \
+  -outfmt 10 &
+
+## that actually seems to work pretty well...
+## started ~12:30 on mar12.
