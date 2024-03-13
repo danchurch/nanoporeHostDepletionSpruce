@@ -5949,3 +5949,92 @@ nohup blastn -db $fungRefGenome \
 
 ## that actually seems to work pretty well...
 ## started ~12:30 on mar12.
+
+## anything else to be done while that works?
+
+## oops, had to reboot:
+sudo umount /vol/funMicStorage 
+sudo mount /dev/vdd /vol/here
+
+## we need to remove the unblocked reads from our 
+## phase2 fastq files...
+vdd
+
+cd /vol/here/fungalGenomes
+
+phase2rawReads=/vol/here/fungalGenomes/rawReads/phase2/fastq_pass
+unblockedList=/vol/here/fungalGenomes/rawReads/phase2/unblocked_read_ids.txt
+
+## we want a combined 
+
+ls $phase2rawReads
+
+less $unblockedList
+
+## I think we can do this:
+cat ${phase2rawReads}/*.fastq.gz > allPhase2raw.gz
+
+## now decompress:
+
+gunzip allPhase2raw.gz
+mv allPhase2raw allPhase2raw.fastq
+
+## get read names:
+grep "runid" allPhase2raw.fastq | cut -f1 -d" " | 
+  sed "s/^@//" > allPhase2_ReadNames.txt
+
+## get reads not in the unblocked list
+cat allPhase2_ReadNames.txt $unblockedList | sort | uniq -u  > notUnblockReadList.txt
+
+## so this should be in the raw reads but not in the unblocked list 
+
+less notUnblockReadList.txt
+
+grep 00001e70-3fbe-48d9-b3b5-834d9cce2689 $unblockedList
+grep 00001e70-3fbe-48d9-b3b5-834d9cce2689 allPhase2raw.fastq
+
+grep ffff59fc-2df8-4d82-b75a-4530587a34af $unblockedList
+grep ffff59fc-2df8-4d82-b75a-4530587a34af allPhase2raw.fastq
+
+grep fff298f6-8a7f-4e6b-b9dc-c97a8c663ef3 $unblockedList
+grep -A1 fff298f6-8a7f-4e6b-b9dc-c97a8c663ef3 allPhase2raw.fastq
+
+## looks ok
+## assuming that worked, keep only these reads that were not unblocked
+## pull these out:
+
+seqtk subseq allPhase2raw.fastq notUnblockReadList.txt > phase2_noUnblocked.fastq
+
+
+grep -c "runid=" phase2_noUnblocked.fastq ## 312,189 out of 
+
+grep -c "runid=" allPhase2raw.fastq  ## 587477  reads
+
+## just curious, how many unpassed reads did we have 
+## in the phase1 vs. phase2? look later. Assume 
+## there are more low-quality reads from the adaptive
+## seq runs, because the reads don't have a chance to
+## get past the low quality starts...
+
+## for now, start the alignment of notUnblocked phase2 
+## reads against our fungal genome
+
+## make fasta:
+
+seqtk seq -A phase2_noUnblocked.fastq > phase2_noUnblocked.fa
+
+cd /vol/here/fungalGenomes
+
+fungRefGenome=/mnt/refSeq/allRefGenomesFungal.fa
+phase2_noUnblocked=/vol/here/fungalGenomes/phase2_noUnblocked.fa
+nohup blastn -db $fungRefGenome \
+  -query $phase2_noUnblocked \
+  -num_threads 13 \
+  -num_alignments 1 \
+  -out phase2_noUnblocked_fungal.csv \
+  -outfmt 10 &
+
+## need to check if there are relatively more low quality (failed)
+## reads after adaptive sampling. Would explain a lot if there are.
+
+
