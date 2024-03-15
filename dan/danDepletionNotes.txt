@@ -6037,4 +6037,12 @@ nohup blastn -db $fungRefGenome \
 ## need to check if there are relatively more low quality (failed)
 ## reads after adaptive sampling. Would explain a lot if there are.
 
+## we are losing our instance - let's get the CSV off of it.
+
+
+file=/vol/here/fungalGenomes/phase2_noUnblocked_fungal.csv
+file=/vol/here/fungalGenomes/phase1control_fungal.csv
+
+scp ubuntu@129.70.51.6 -P 30374
+
 
