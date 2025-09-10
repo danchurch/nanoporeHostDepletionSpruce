@@ -6045,4 +6045,86 @@ file=/vol/here/fungalGenomes/phase1control_fungal.csv
 
 scp ubuntu@129.70.51.6 -P 30374
 
+## oh shit, my laptop is in the shop, with the private key to this instance
 
+## looks like our data are stuck on denbi...
+
+## can we recover our files by remounting the volume on another machine
+
+## for instance, to sulari's machine
+
+## from a flash drive
+cp /media/daniel/AEDB-B2EA/setupVMs/funmic7 ~/.ssh/
+cp /media/daniel/AEDB-B2EA/setupVMs/funmic7.pub ~/.ssh/
+chmod 600 funmic7
+chmod 644 funmic7.pub
+
+ssh -vi ~/.ssh/funmic7 ubuntu@129.70.51.6 -P 30289
+
+## doesn't work...why not?
+
+## another machine:
+cp /media/daniel/AEDB-B2EA/setupVMs/funmic6 ~/.ssh/
+chmod 600 funmic6
+
+ssh -vi ~/.ssh/funmic6 ubuntu@129.70.51.6 -P 30391
+
+## that didn't work either. 
+
+
+## and the simpleVM website is down...everything is broken all the time..
+
+### ugh, this is frustrating 
+## okay, well let's assume that data can be recovered when we get the laptop
+## back
+
+## let's check the read abundances. We have relatively similar
+## amount of fungal reads detected in the phase2 as with the 
+## control, if memory serves. 
+
+## this is odd. we would expect more. Part of the answer may lie in the 
+## number of low quality reads. It seems like there 
+
+## on nanocomp:
+
+
+## just comparing size of data
+
+cd /var/lib/minknow/data/experiment_spruce_threephase/controll_130923/20230913_1355_MN40608_FAX46654_83018e78/
+du -sh */
+echo "########################################"
+cd /var/lib/minknow/data/experiment_spruce_threephase/phase2hostDepletion/20230913_2238_MN40608_FAX46654_d4c9fea9/
+du -sh */
+
+## both runs have ~1.5 gig of passed reads, zipped
+## the controll has 252M of failed reads, and the phase 2 has 340M of failed reads, zipped
+
+## as far as number of reads:
+
+
+## control
+cd /var/lib/minknow/data/experiment_spruce_threephase/controll_130923/20230913_1355_MN40608_FAX46654_83018e78/fastq_pass
+
+gunzip -k *  
+cat *fastq | wc -l # 1243328, or 310832 reads passed in control
+rm *fastq
+
+cd /var/lib/minknow/data/experiment_spruce_threephase/controll_130923/20230913_1355_MN40608_FAX46654_83018e78/fastq_fail
+gunzip -k *  
+cat *fastq | wc -l # 259496, or 64874 reads failed in control
+rm *fastq
+
+## phase2
+
+cd /var/lib/minknow/data/experiment_spruce_threephase/phase2hostDepletion/20230913_2238_MN40608_FAX46654_d4c9fea9/fastq_pass
+
+gunzip -k *  
+cat *fastq | wc -l # 2349908, or 587477 reads passed in phase2
+rm *fastq
+
+cd /var/lib/minknow/data/experiment_spruce_threephase/phase2hostDepletion/20230913_2238_MN40608_FAX46654_d4c9fea9/fastq_fail
+gunzip -k *  
+cat *fastq | wc -l # 382308, or 95577 reads failed in phase2
+rm *fastq
+
+## no real difference there
